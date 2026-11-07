@@ -1,0 +1,24 @@
+{
+  "name": "airsign",
+  "version": "1.0.0",
+  "description": "**A communication helper for quick, high-stakes moments — not an interpreter.**",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Veer03/AirSign.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Veer03/AirSign/issues"
+  },
+  "homepage": "https://github.com/Veer03/AirSign#readme"
+}
