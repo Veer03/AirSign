@@ -1,6 +1,8 @@
 # AirSign: Master Bootstrap Prompt and Team Spec
 
 > **Status:** pre-build concept and plan. Nothing here is implemented yet. Items marked VERIFY are unconfirmed — check the official docs before relying on them. This is a living document, not a contract.
+>
+> **Build docs:** [ARCHITECTURE.md](ARCHITECTURE.md) (base site + extension points) · [DESIGN.md](DESIGN.md) (3D/motion system) · [ROADMAP.md](ROADMAP.md) (tiers, slices, timeline) · [tasks/](tasks/) (per-person work).
 
 Hackathon: HackCamp 2026 (nwPlus, UBC Vancouver), Nov 7–8, 2026. Team deadline: Nov 8, 12:00 PM PST.
 Team: 4 people. Dev tools: opencode (coding agent) and docdex (local docs index for agents).
