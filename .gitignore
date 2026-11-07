@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# next.js
+.next/
+out/
+build/
+
+# env — keep the example, never commit real keys
+.env
+.env.*
+!.env.example
+
+# generated assets (self-hosted at setup time)
+public/models/*.task
+public/mediapipe/
+
+# test and build artifacts
+coverage/
+*.tsbuildinfo
+*.log
+
+# local docs index
+.docdex/
+
+# os
+.DS_Store
+Thumbs.db
