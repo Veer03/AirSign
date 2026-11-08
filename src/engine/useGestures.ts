@@ -304,6 +304,10 @@ export function useGestures(options: UseGesturesOptions) {
             : "Hand tracking failed to load. Check the console, or use keys 1–7.",
         });
         resetRecognizer();
+        // The stream is already live; stop it so the camera light does not
+        // stay on behind the error overlay.
+        stopCamera?.();
+        stopCamera = null;
         return;
       }
 

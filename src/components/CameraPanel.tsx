@@ -277,7 +277,7 @@ function CameraSurface({
 
             <HoldRing
               ringRef={ringRef}
-              dwellMs={dwellMs}
+              dwellMs={runtime.combo ? Math.max(dwellMs, 500) : dwellMs}
               repeatWaitMs={runtime.repeatWaitMs}
               armed={Boolean(sign)}
             />

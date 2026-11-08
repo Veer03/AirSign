@@ -13,7 +13,19 @@ export type CameraHandle = {
 };
 
 export function describeCameraError(error: unknown): CameraError {
-  const name = error instanceof DOMException ? error.name : "";
+  // getUserMedia is unavailable on plain HTTP (except localhost). Report that
+  // directly instead of mislabeling it as a blocked permission.
+  if (typeof window !== "undefined" && !window.isSecureContext) {
+    return {
+      kind: "insecure",
+      message: "Camera needs HTTPS or localhost in this browser. Keyboard keys 1–9 still work.",
+    };
+  }
+
+  const name =
+    error instanceof DOMException
+      ? error.name
+      : ((error as { name?: string } | null)?.name ?? "");
 
   switch (name) {
     case "NotAllowedError":
