@@ -45,7 +45,6 @@ export default function WorkspacePage() {
   const [voiceConfigured, setVoiceConfigured] = useState<boolean | null>(null);
 
   const settingsRef = useRef(settings);
-<<<<<<< Updated upstream
 
   useEffect(() => {
     practiceTargetRef.current = practiceTarget;
@@ -71,9 +70,7 @@ export default function WorkspacePage() {
       setPracticeCorrect(false);
     }
   }, []);
-=======
   const gunAudioRef = useRef<HTMLAudioElement | null>(null);
->>>>>>> Stashed changes
   const { speak, prewarm, state: speakState, error: speakError, clearError } = useSpeak();
 
   useEffect(() => {
@@ -117,7 +114,8 @@ export default function WorkspacePage() {
   useEffect(() => {
     if (!voiceConfigured) return;
     void prewarm(
-      STARTER_PHRASES.map((phrase) => phrase.text),
+      // The finger gun plays a sound clip instead of speech, so its text is empty.
+      STARTER_PHRASES.map((phrase) => phrase.text).filter((text) => text.trim().length > 0),
       settings.voice,
     );
   }, [voiceConfigured, settings.voice, prewarm]);
@@ -151,16 +149,14 @@ export default function WorkspacePage() {
 
   const handleLock = useCallback(
     (event: GestureEvent) => {
-<<<<<<< Updated upstream
-      // Practice: a camera lock on the highlighted letter/number counts as correct.
-      if (event.source === "camera" && practiceTargetRef.current === event.label) {
-        setPracticeCorrect(true);
-=======
       if (event.gesture === "Gun") {
         playGunSound();
         setLast(event);
         return;
->>>>>>> Stashed changes
+      }
+      // Practice: a camera lock on the highlighted letter/number counts as correct.
+      if (event.source === "camera" && practiceTargetRef.current === event.label) {
+        setPracticeCorrect(true);
       }
       setChips((prev) => [...prev, event]);
       setLast(event);

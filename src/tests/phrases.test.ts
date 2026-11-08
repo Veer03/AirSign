@@ -13,7 +13,7 @@ describe("starter phrases", () => {
   it("maps MediaPipe gestures to phrases", () => {
     expect(phraseForGesture("Thumb_Up")?.text).toBe("Thumbs up");
     expect(phraseForGesture("Middle_Finger")?.text).toBe("Fuck you");
-    expect(STARTER_PHRASES).toHaveLength(9);
+    expect(STARTER_PHRASES).toHaveLength(10); // 9 spoken phrases + the finger-gun sound
   });
 
   it("builds a complete gesture event", () => {
