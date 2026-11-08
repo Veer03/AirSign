@@ -24,6 +24,7 @@ type CameraPanelProps = {
   /** Harshpal's kNN fingerspelling mode (owned by the page). */
   alphabetMode: boolean;
   onAlphabetModeChange?: (on: boolean) => void;
+  onWordsModeChange?: (on: boolean) => void;
   /** Harshpal's ASL 1–10 mode (owned by the page). */
   numberMode: boolean;
   onNumberModeChange?: (on: boolean) => void;
@@ -47,15 +48,18 @@ export function CameraPanel(props: CameraPanelProps) {
   );
 }
 
-const MODES = ["starter", "words", "alphabet", "alphabet-pretrained", "numbers"] as const;
+const MODES = ["starter", "words", "alphabet", "numbers"] as const;
 type Mode = (typeof MODES)[number];
 const MODE_LABELS: Record<Mode, string> = {
-  starter: "starter",
-  words: "asl words",
-  alphabet: "alphabet",
-  "alphabet-pretrained": "alphabet · pretrained",
-  numbers: "numbers",
+  starter: "starter phrases",
+  words: "ASL words",
+  alphabet: "A–Z letters",
+  numbers: "ASL numbers",
 };
+const MODE_GROUPS = [
+  { label: "Quick phrases", modes: ["starter"] },
+  { label: "ASL recognition", modes: ["words", "alphabet", "numbers"] },
+] as const;
 
 function sideTag(side: HandCandidate["side"]) {
   if (side === "left") return "L";
@@ -70,6 +74,7 @@ function CameraSurface({
   twoHands,
   alphabetMode,
   onAlphabetModeChange,
+  onWordsModeChange,
   numberMode,
   onNumberModeChange,
   practiceLetter,
@@ -86,12 +91,11 @@ function CameraSurface({
   const ringRef = useRef<HTMLDivElement | null>(null);
 
   // "starter" = MediaPipe handshapes; "words" = Holistic + asl-signs model;
-  // "alphabet" = Harshpal's kNN letters (page-owned alphabetMode, same
+  // "alphabet" = static A–Z classifiers (page-owned alphabetMode, same
   // GestureRecognizer pipeline as starter). Read the URL after mount so SSR
   // and the client agree.
   const [baseMode, setBaseMode] = useState<"starter" | "words">("starter");
-  // Which letter classifier the alphabet tabs use: Harshpal's kNN or the
-  // pretrained MLP. The page's "ASL A–Z" button keeps whichever was last used.
+  // The A–Z classifier is a setting inside one alphabet mode, not a duplicate mode.
   const [alphabetModel, setAlphabetModel] = useState<AlphabetModel>("knn");
   // Practice drill letters are checked with the pretrained classifier.
   useEffect(() => {
@@ -100,30 +104,35 @@ function CameraSurface({
   const mode: Mode = numberMode
     ? "numbers"
     : alphabetMode
-      ? alphabetModel === "pretrained"
-        ? "alphabet-pretrained"
-        : "alphabet"
+      ? "alphabet"
       : baseMode;
   const switchMode = useCallback(
     (next: Mode) => {
-      if (next === "alphabet" || next === "alphabet-pretrained") {
-        setAlphabetModel(next === "alphabet-pretrained" ? "pretrained" : "knn");
+      if (next === "alphabet") {
+        onWordsModeChange?.(false);
         onNumberModeChange?.(false);
         onAlphabetModeChange?.(true);
       } else if (next === "numbers") {
+        onWordsModeChange?.(false);
         onAlphabetModeChange?.(false);
         onNumberModeChange?.(true);
       } else {
+        onWordsModeChange?.(next === "words");
         onAlphabetModeChange?.(false);
         onNumberModeChange?.(false);
         setBaseMode(next);
       }
     },
-    [onAlphabetModeChange, onNumberModeChange],
+    [onAlphabetModeChange, onNumberModeChange, onWordsModeChange],
   );
   useEffect(() => {
-    const fromUrl = new URLSearchParams(window.location.search).get("mode");
-    if (fromUrl && (MODES as readonly string[]).includes(fromUrl)) switchMode(fromUrl as Mode);
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("mode");
+    if (params.get("alphabetModel") === "pretrained" || fromUrl === "alphabet-pretrained") {
+      setAlphabetModel("pretrained");
+    }
+    if (fromUrl === "alphabet-pretrained") switchMode("alphabet");
+    else if (fromUrl && (MODES as readonly string[]).includes(fromUrl)) switchMode(fromUrl as Mode);
     // Mount only: the URL seeds the initial mode.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -136,14 +145,22 @@ function CameraSurface({
       return;
     }
     const url = new URL(window.location.href);
-    if (mode === "starter") url.searchParams.delete("mode");
-    else url.searchParams.set("mode", mode);
+    if (mode === "starter") {
+      url.searchParams.delete("mode");
+      url.searchParams.delete("alphabetModel");
+    } else {
+      url.searchParams.set("mode", mode);
+      if (mode === "alphabet" && alphabetModel === "pretrained") {
+        url.searchParams.set("alphabetModel", "pretrained");
+      } else {
+        url.searchParams.delete("alphabetModel");
+      }
+    }
     window.history.replaceState(null, "", url);
-  }, [mode]);
+  }, [mode, alphabetModel]);
   const words = mode === "words";
-  // Harshpal's alphabet tab also recognizes the Wow / finger-heart / middle
-  // finger poses; the pretrained tab stays letters-only.
-  const knnAlphabet = mode === "alphabet";
+  // The dataset classifier also recognizes custom interjections.
+  const knnAlphabet = alphabetModel === "knn";
 
   // CPU/GPU toggle: saved in localStorage; switching rebuilds the models by
   // remounting this surface (same path as "Try again").
@@ -241,26 +258,46 @@ function CameraSurface({
           </span>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
-          <div
-            className="no-scrollbar order-first flex w-full overflow-x-auto border border-white/25 sm:order-none sm:w-auto"
-            role="group"
-            aria-label="Recognition mode"
-          >
-            {MODES.map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={mode === value}
-                onClick={() => switchMode(value)}
-                className={cn(
-                  "label shrink-0 whitespace-nowrap px-2.5 py-2 transition sm:px-2 sm:py-1",
-                  mode === value ? "bg-white/15 !text-white" : "hover:!text-white",
-                )}
-              >
-                {MODE_LABELS[value]}
-              </button>
+          <div className="order-first flex w-full flex-wrap gap-2 sm:order-none" aria-label="Recognition modes">
+            {MODE_GROUPS.map((group) => (
+              <div key={group.label} className="flex min-w-0 items-center border border-white/25" role="group" aria-label={group.label}>
+                <span className="label shrink-0 px-2 !text-[8px]">{group.label}</span>
+                {group.modes.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={mode === value}
+                    onClick={() => switchMode(value)}
+                    className={cn(
+                      "label whitespace-nowrap px-2 py-2 transition sm:px-2 sm:py-1",
+                      mode === value ? "bg-white/15 !text-white" : "hover:!text-white",
+                    )}
+                  >
+                    {MODE_LABELS[value]}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
+          {alphabetMode ? (
+            <div className="flex items-center gap-2 border border-white/20 px-2 py-1" role="group" aria-label="A–Z classifier">
+              <span className="label !text-[8px]">A–Z model</span>
+              {(["knn", "pretrained"] as const).map((model) => (
+                <button
+                  key={model}
+                  type="button"
+                  aria-pressed={alphabetModel === model}
+                  onClick={() => setAlphabetModel(model)}
+                  className={cn(
+                    "label px-2 py-1 !text-[8px] transition",
+                    alphabetModel === model ? "bg-white/15 !text-white" : "hover:!text-white",
+                  )}
+                >
+                  {model === "knn" ? "dataset" : "pretrained"}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="flex border border-white/25" role="group" aria-label="Processing">
             {(["GPU", "CPU"] as const).map((value) => {
               const active = (delegateChoice ?? runtime.delegate ?? "GPU") === value;

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import type { GestureState } from "@/lib/contracts";
 import { clamp } from "@/lib/utils";
 import { describeCameraError, startCamera, type CameraFacing } from "./camera";
-import { detectHolistic, getHolistic, resetHolistic } from "./holistic";
+import { detectHolistic, disposeHolistic, getHolistic } from "./holistic";
 import { frameHasHand, frameTo543, type FrameOptions, type Point3 } from "./holistic-frame";
 import { getAslClassifier, type WordGuess } from "./asl-classifier";
 import { HAND_CONNECTIONS } from "./landmarks";
@@ -92,6 +92,22 @@ function drawHands(canvas: HTMLCanvasElement, video: HTMLVideoElement, hands: Po
   ctx.restore();
 }
 
+function smoothOverlayHand(previous: Point3[] | null, current: Point3[] | null): Point3[] | null {
+  if (!current || current.length === 0) return current;
+  if (!previous || previous.length !== current.length) return current;
+
+  const movement = Math.hypot(current[0].x - previous[0].x, current[0].y - previous[0].y);
+  const response = movement > 0.025 ? 0.88 : 0.68;
+  return current.map((point, index) => {
+    const before = previous[index];
+    return {
+      x: before.x + (point.x - before.x) * response,
+      y: before.y + (point.y - before.y) * response,
+      z: (before.z ?? 0) + ((point.z ?? 0) - (before.z ?? 0)) * response,
+    };
+  });
+}
+
 /** Drop leading/trailing frames with no hand, keep at most the last MAX_FRAMES. */
 function trimSegment(frames: Float32Array[]): Float32Array[] {
   let start = 0;
@@ -113,6 +129,8 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
   });
 
   const busyRef = useRef(false);
+  const sessionRef = useRef(0);
+  const overlayHandsRef = useRef<{ left: Point3[] | null; right: Point3[] | null }>({ left: null, right: null });
   const onWordRef = useRef(onWord);
 
   // Sliding-window state, all in refs so the frame loop never re-renders.
@@ -136,7 +154,8 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
   }, []);
 
   /** One continuous-mode inference over the current sliding window. */
-  const inferContinuous = useCallback(async () => {
+  const inferContinuous = useCallback(async (sessionId: number) => {
+    if (sessionId !== sessionRef.current || busyRef.current) return;
     const frames = trimSegment(windowRef.current.map((entry) => entry.frame));
     if (frames.length < MIN_FRAMES) return;
 
@@ -144,6 +163,9 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
     try {
       const classifier = await getAslClassifier();
       const guesses = await classifier.classify(frames);
+      // The user may have stopped the camera or changed modes while the model
+      // was running. A stale result must never add a word or speak afterward.
+      if (sessionId !== sessionRef.current) return;
       const top = guesses[0];
       const confident = Boolean(top) && top.probability >= CONTINUOUS_THRESHOLD;
       const stable = confident && candidateRef.current === top.gloss;
@@ -161,15 +183,24 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
         publish({ guesses, message: confident ? `Hold on… “${top.gloss}”?` : "Watching…" });
       }
     } catch (error) {
-      console.error("[asl] continuous classify failed", error);
+      if (sessionId === sessionRef.current) {
+        console.error("[asl] continuous classify failed", error);
+        publish({ message: "Could not classify that sign. Keep signing or restart ASL Words." });
+      }
     } finally {
       busyRef.current = false;
     }
   }, [publish, resetContinuous]);
 
   useEffect(() => {
+    const sessionId = ++sessionRef.current;
     if (!enabled) {
       windowRef.current = [];
+      overlayHandsRef.current = { left: null, right: null };
+      candidateRef.current = null;
+      lastInferRef.current = 0;
+      lastHandAtRef.current = 0;
+      lastEmitRef.current = null;
       publish({ state: "idle", message: "Camera off", fps: 0, handsVisible: 0, guesses: null });
       return;
     }
@@ -232,7 +263,9 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
           state: "error",
           message: "Sign-word models are missing or failed to load. Run `npm run setup:assets`, then reload.",
         });
-        resetHolistic();
+        disposeHolistic();
+        stopCamera?.();
+        stopCamera = null;
         return;
       }
       if (cancelled) return;
@@ -248,9 +281,15 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
         if (video.readyState >= 2 && video.videoWidth > 0) {
           try {
             const result = detectHolistic(holistic.landmarker, video, now);
-            const hands = [result.leftHandLandmarks?.[0], result.rightHandLandmarks?.[0]].filter(
+            const leftHand = result.leftHandLandmarks?.[0] ?? null;
+            const rightHand = result.rightHandLandmarks?.[0] ?? null;
+            const hands = [leftHand, rightHand].filter(
               (hand): hand is NonNullable<typeof hand> => Boolean(hand && hand.length),
             );
+            overlayHandsRef.current = {
+              left: smoothOverlayHand(overlayHandsRef.current.left, leftHand),
+              right: smoothOverlayHand(overlayHandsRef.current.right, rightHand),
+            };
             if (hands.length) lastHandAtRef.current = now;
 
             if (hands.length === 0 && now - lastHandAtRef.current > HANDS_GONE_RESET_MS) {
@@ -262,11 +301,14 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
               while (win.length && (now - win[0].t > WINDOW_MS || win.length > MAX_FRAMES)) win.shift();
               if (!busyRef.current && now - lastInferRef.current >= INFER_EVERY_MS) {
                 lastInferRef.current = now;
-                void inferContinuous();
+                void inferContinuous(sessionId);
               }
             }
 
-            drawHands(canvas, video, hands, hands.length > 0);
+            const displayHands = [overlayHandsRef.current.left, overlayHandsRef.current.right].filter(
+              (hand): hand is Point3[] => Boolean(hand),
+            );
+            drawHands(canvas, video, displayHands, hands.length > 0);
 
             frames += 1;
             if (now - fpsWindowStart >= 1000) {
@@ -291,6 +333,7 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
 
     return () => {
       cancelled = true;
+      sessionRef.current += 1;
       if (frameHandle !== null) {
         if (usingVideoFrame) {
           (video as HTMLVideoElement & { cancelVideoFrameCallback?: (id: number) => void }).cancelVideoFrameCallback?.(
@@ -302,6 +345,8 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
       }
       stopCamera?.();
       windowRef.current = [];
+      overlayHandsRef.current = { left: null, right: null };
+      candidateRef.current = null;
     };
     // facing: switching front/rear restarts the camera in place.
   }, [enabled, facing, publish, videoRef, canvasRef, inferContinuous, resetContinuous]);

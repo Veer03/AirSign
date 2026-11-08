@@ -29,6 +29,7 @@ export default function WorkspacePage() {
   const isMobile = useIsMobile();
   const [alphabetMode, setAlphabetMode] = useState(false);
   const [numberMode, setNumberMode] = useState(false);
+  const [wordsMode, setWordsMode] = useState(false);
   const [sideTab, setSideTab] = useState<"interpret" | "practice">("interpret");
   // Charts start closed and close again whenever the Practice tab is opened.
   const [alphabetPracticeOpen, setAlphabetPracticeOpen] = useState(false);
@@ -53,6 +54,7 @@ export default function WorkspacePage() {
     const number = isPracticeNumber(target);
     setNumberMode(number);
     setAlphabetMode(!number);
+    setWordsMode(false);
     setCameraOn(true);
   }, []);
 
@@ -190,7 +192,9 @@ export default function WorkspacePage() {
                 ? "ASL alphabet + Wow sign"
                 : numberMode
                   ? "ASL numbers 1–10"
-                  : "starter gestures · not sign language"}
+                  : wordsMode
+                    ? "ASL word recognition · 250 signs"
+                    : "starter gestures · not sign language"}
             </span>
             {isMobile ? (
               <button
@@ -227,13 +231,15 @@ export default function WorkspacePage() {
                   ? "Hold a static ASL letter pose or the Wow pose until the ring fills. The result is added and spoken if speak-on-lock is on."
                   : numberMode
                     ? "Hold a static ASL number handshape until the ring fills. The result is added and spoken if speak-on-lock is on."
-                    : "Hold a starter pose — one hand, or a matching pair — until the ring fills. Speak-on-lock is "}
-                {!alphabetMode && !numberMode ? (
+                    : wordsMode
+                      ? "Sign one ASL word at a time. A 250-sign model guesses from the movement and adds a word when it is confident."
+                      : "Hold a starter pose — one hand, or a matching pair — until the ring fills. Speak-on-lock is "}
+                {!alphabetMode && !numberMode && !wordsMode ? (
                   <span className={settings.autoSpeak ? "text-accent" : "text-white/80"}>
                     {settings.autoSpeak ? "on" : "off"}
                   </span>
                 ) : null}
-                {alphabetMode || numberMode
+                {alphabetMode || numberMode || wordsMode
                   ? " The video never leaves this device."
                   : ". The video never leaves this device."}
               </p>
@@ -250,6 +256,7 @@ export default function WorkspacePage() {
             repeatMs={settings.repeatMs}
             twoHands={settings.twoHands}
             alphabetMode={alphabetMode}
+            onWordsModeChange={setWordsMode}
             practiceLetter={practiceTarget && !isPracticeNumber(practiceTarget) ? practiceTarget : null}
             practiceNumber={practiceTarget && isPracticeNumber(practiceTarget) ? practiceTarget : null}
             onAlphabetModeChange={setAlphabetMode}
@@ -397,7 +404,7 @@ export default function WorkspacePage() {
 
       <footer className="mx-auto max-w-[1500px] px-4 pb-8">
         <p className="label text-center !text-[9px]">
-          not an interpreter · starter gestures only · nothing is spoken without a lock
+          not a full interpreter · ASL words mode guesses from a limited vocabulary
         </p>
       </footer>
     </div>
