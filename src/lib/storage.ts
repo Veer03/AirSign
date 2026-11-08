@@ -4,10 +4,27 @@ import { createStore, get, set } from "idb-keyval";
 import type { Settings } from "./contracts";
 import { DEFAULT_SETTINGS } from "./contracts";
 
+export type StoredCustomGesture = {
+  id: string;
+  label: string;
+  /** 1 = single-hand gesture, 2 = two-hand gesture (captured/recognized together). */
+  hands: 1 | 2;
+  /**
+   * Recorded landmark frames. Each frame is a normalized vector:
+   * - 1 hand: 63 values (21 landmarks × x/y/z), wrist/middle-finger normalized.
+   * - 2 hands: 126 values (left-ish hand then right-ish hand by x), each hand normalized.
+   * Motion gestures store multiple frames; static captures store one/few frames.
+   * Kept as number[][] for IndexedDB/JSON safety.
+   */
+  frames: number[][];
+  createdAt: number;
+};
+
 const appStore = createStore("airsign", "app");
 const audioStore = createStore("airsign", "audio");
 
 const SETTINGS_KEY = "settings";
+const CUSTOM_GESTURES_KEY = "custom-gestures";
 
 export async function loadSettings(): Promise<Settings> {
   try {
@@ -23,6 +40,9 @@ export async function loadSettings(): Promise<Settings> {
       settings.repeatMs = DEFAULT_SETTINGS.repeatMs;
     }
     settings.repeatMs = Math.min(settings.repeatMs, 8000);
+    if (![0.2, 0.3, 0.45].includes(Number(settings.customConfidence))) {
+      settings.customConfidence = DEFAULT_SETTINGS.customConfidence;
+    }
     return settings;
   } catch {
     return DEFAULT_SETTINGS;
@@ -78,5 +98,52 @@ export async function setCachedAudio(text: string, voice: string, blob: Blob): P
     await set(audioKey(text, voice), blob, audioStore);
   } catch {
     // Audio still plays; caching is an optimization.
+  }
+}
+
+export async function loadCustomGestures(): Promise<StoredCustomGesture[]> {
+  try {
+    const stored = await get<unknown[]>(CUSTOM_GESTURES_KEY, appStore);
+    if (!Array.isArray(stored)) return [];
+    const gestures: StoredCustomGesture[] = [];
+    for (const item of stored) {
+      if (!item || typeof item !== "object") continue;
+      const raw = item as Record<string, unknown>;
+      if (typeof raw.id !== "string" || typeof raw.label !== "string") continue;
+      const createdAt = typeof raw.createdAt === "number" ? raw.createdAt : Date.now();
+
+      if (Array.isArray(raw.frames)) {
+        const frames = raw.frames
+          .filter((frame): frame is unknown[] => Array.isArray(frame))
+          .map((frame) => frame.filter((v): v is number => typeof v === "number" && Number.isFinite(v)))
+          .filter((frame) => frame.length === 63 || frame.length === 126);
+        if (frames.length === 0) continue;
+        const hands: 1 | 2 = frames[0].length === 126 || raw.hands === 2 ? 2 : 1;
+        gestures.push({ id: raw.id, label: raw.label, hands, frames, createdAt });
+        continue;
+      }
+
+      // Backward compat: old single-vector format.
+      if (Array.isArray(raw.vector) && raw.vector.length === 63 && raw.vector.every((v) => typeof v === "number" && Number.isFinite(v))) {
+        gestures.push({
+          id: raw.id,
+          label: raw.label,
+          hands: 1,
+          frames: [raw.vector as number[]],
+          createdAt,
+        });
+      }
+    }
+    return gestures;
+  } catch {
+    return [];
+  }
+}
+
+export async function saveCustomGestures(gestures: StoredCustomGesture[]): Promise<void> {
+  try {
+    await set(CUSTOM_GESTURES_KEY, gestures, appStore);
+  } catch {
+    // Private mode / quota — gestures still work for the session.
   }
 }

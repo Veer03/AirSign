@@ -26,6 +26,28 @@ function normalize(points: Landmark[], mirror = false): Float32Array | null {
   return values;
 }
 
+/** Wrist/middle-finger normalized 21-landmark vector (63 values). Used by custom gestures. */
+export function normalizeHandLandmarks(points: Landmark[] | null | undefined, mirror = false): Float32Array | null {
+  if (!points) return null;
+  return normalize(points, mirror);
+}
+
+/** Custom gestures also retain wrist position so translated motion is visible. */
+export function normalizeCustomGestureHand(
+  points: Landmark[] | null | undefined,
+  mirror = false,
+): Float32Array | null {
+  if (!points) return null;
+  const values = normalize(points, mirror);
+  const wrist = points[0];
+  if (!values || !wrist) return null;
+  // Normalization makes the wrist the origin, which is right for handshape
+  // matching but erases waves and other motions across the camera view.
+  values[0] = mirror ? 1 - wrist.x : wrist.x;
+  values[1] = wrist.y;
+  return values;
+}
+
 /**
  * Confidence from both agreement and closeness. Calibrated with leave-one-out
  * on asl-landmarks.csv: 3/4/5 votes were right 71%/85%/100% of the time, and

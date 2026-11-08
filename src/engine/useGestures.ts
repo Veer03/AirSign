@@ -19,6 +19,8 @@ import { LocalStubRecognizer, type SignRecognizer, type SignResult } from "./sig
 import { HAND_CONNECTIONS, type Landmark } from "./landmarks";
 import { getASLAlphabetClassifier, type ASLAlphabetClassifier } from "./asl-alphabet";
 import { getPretrainedAlphabetClassifier } from "./asl-alphabet-pretrained";
+import { classifyCustomGesture } from "./custom-gesture-store";
+import type { StoredCustomGesture } from "@/lib/storage";
 
 /** Which letter classifier alphabet mode uses. Both share classify(points, side). */
 export type AlphabetModel = "knn" | "pretrained";
@@ -49,6 +51,13 @@ export type UseGesturesOptions = {
   /** "knn" = Harshpal's dataset lookup (default); "pretrained" = online MLP. */
   alphabetModel?: AlphabetModel;
   numberMode: boolean;
+  /** User-recorded custom gestures. Only active in custom mode. */
+  customMode?: boolean;
+  /** Confidence floor for matching a saved custom gesture. */
+  customConfidence?: number;
+  customGestures?: StoredCustomGesture[];
+  /** Latest usable-hand landmarks for custom capture (1 or 2 hands). */
+  onCaptureFrame?: (hands: Landmark[][] | null) => void;
   onLock: LockHandler;
   videoRef: RefObject<HTMLVideoElement | null>;
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -56,6 +65,8 @@ export type UseGesturesOptions = {
   ringRef: RefObject<HTMLDivElement | null>;
   /** Front ("user", mirrored preview) or rear ("environment") camera. */
   facing?: CameraFacing;
+  /** Preload the hand model while the camera is off (default true). */
+  prewarm?: boolean;
 };
 
 export type GestureRuntime = {
@@ -75,6 +86,7 @@ export type GestureRuntime = {
 };
 
 const CONNECTED = HAND_CONNECTIONS;
+const CUSTOM_CLASSIFY_INTERVAL_MS = 80;
 
 function drawOverlay(
   canvas: HTMLCanvasElement,
@@ -121,24 +133,29 @@ function drawOverlay(
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     ctx.shadowColor = glow;
-    ctx.shadowBlur = width / 100;
+    ctx.shadowBlur = width / 160;
     ctx.lineWidth = line;
 
+    ctx.beginPath();
     for (const [from, to] of CONNECTED) {
       const a = landmarks[from];
       const b = landmarks[to];
       if (!a || !b) continue;
-      ctx.beginPath();
       ctx.moveTo(a.x * width, a.y * height);
       ctx.lineTo(b.x * width, b.y * height);
-      ctx.stroke();
     }
+    // One glow pass per hand is much cheaper than blurring every bone and dot.
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.stroke();
 
+    ctx.beginPath();
     for (const point of landmarks) {
-      ctx.beginPath();
+      // Start a separate subpath so fill() keeps the landmarks as dots.
+      ctx.moveTo(point.x * width + dot, point.y * height);
       ctx.arc(point.x * width, point.y * height, dot, 0, Math.PI * 2);
-      ctx.fill();
     }
+    ctx.fill();
 
     ctx.restore();
   }
@@ -169,6 +186,10 @@ export function useGestures(options: UseGesturesOptions) {
   const { enabled, dwellMs, repeatMs, twoHands, alphabetMode, numberMode, onLock, videoRef, canvasRef, stageRef, ringRef } =
     options;
   const alphabetModel: AlphabetModel = options.alphabetModel ?? "knn";
+  const customMode = options.customMode ?? false;
+  const customConfidence = options.customConfidence ?? 0.2;
+  const customGestures = options.customGestures ?? [];
+  const prewarm = options.prewarm ?? true;
   const facing: CameraFacing = options.facing ?? "user";
 
   const [runtime, setRuntime] = useState<GestureRuntime>({
@@ -182,21 +203,32 @@ export function useGestures(options: UseGesturesOptions) {
   });
 
   const onLockRef = useRef(onLock);
+  const onCaptureFrameRef = useRef(options.onCaptureFrame);
   const twoHandsRef = useRef(twoHands);
   const alphabetModeRef = useRef(alphabetMode);
   const alphabetClassifierRef = useRef<AlphabetClassifier | null>(null);
   const alphabetModelRef = useRef<AlphabetModel>(alphabetModel);
   const numberModeRef = useRef(numberMode);
+  const customModeRef = useRef(customMode);
+  const customConfidenceRef = useRef(customConfidence);
+  const customGesturesRef = useRef(customGestures);
   const alphabetErrorRef = useRef(false);
   const dwellRef = useRef(dwellMs);
   const trackerRef = useRef(new HandTracker());
   const signRecognizerRef = useRef<SignRecognizer>(new LocalStubRecognizer());
   const signStabilizerRef = useRef(new SignStabilizer(dwellMs, 2, ABORT_COOLDOWN_MS));
+  const customWindowRef = useRef<{ t: number; hands: Landmark[][] }[]>([]);
+  const customLastClassifyAtRef = useRef(0);
+  const customMatchRef = useRef<ReturnType<typeof classifyCustomGesture>>(null);
   const zoomRef = useRef({ cx: 0.5, cy: 0.5, z: 1, primed: false });
 
   useEffect(() => {
     onLockRef.current = onLock;
   }, [onLock]);
+
+  useEffect(() => {
+    onCaptureFrameRef.current = options.onCaptureFrame;
+  }, [options.onCaptureFrame]);
 
   useEffect(() => {
     twoHandsRef.current = twoHands;
@@ -219,6 +251,12 @@ export function useGestures(options: UseGesturesOptions) {
   useEffect(() => {
     alphabetModeRef.current = alphabetMode;
     numberModeRef.current = numberMode;
+    customModeRef.current = customMode;
+    customConfidenceRef.current = customConfidence;
+    customGesturesRef.current = customGestures;
+    customWindowRef.current = [];
+    customLastClassifyAtRef.current = 0;
+    customMatchRef.current = null;
     signStabilizerRef.current.reset();
     if (!alphabetMode) {
       alphabetErrorRef.current = false;
@@ -244,7 +282,7 @@ export function useGestures(options: UseGesturesOptions) {
         },
       );
     }
-  }, [alphabetMode, alphabetModel, numberMode, publish]);
+  }, [alphabetMode, alphabetModel, numberMode, customMode, customConfidence, customGestures, publish]);
 
   const applyZoom = useCallback(
     (hands: TrackedHand[]) => {
@@ -266,7 +304,7 @@ export function useGestures(options: UseGesturesOptions) {
       }
 
       const zoom = zoomRef.current;
-      const alpha = zoom.primed ? 0.14 : 1;
+      const alpha = zoom.primed ? 0.22 : 1;
       zoom.cx = lerp(zoom.cx, targetX, alpha);
       zoom.cy = lerp(zoom.cy, targetY, alpha);
       zoom.z = lerp(zoom.z, targetZ, alpha);
@@ -274,7 +312,8 @@ export function useGestures(options: UseGesturesOptions) {
 
       const tx = clamp(0.5 - zoom.z * zoom.cx, 1 - zoom.z, 0);
       const ty = clamp(0.5 - zoom.z * zoom.cy, 1 - zoom.z, 0);
-      stage.style.transform = `translate3d(${(tx * 100).toFixed(3)}%, ${(ty * 100).toFixed(3)}%, 0) scale(${zoom.z.toFixed(3)})`;
+      const transform = `translate3d(${(tx * 100).toFixed(3)}%, ${(ty * 100).toFixed(3)}%, 0) scale(${zoom.z.toFixed(3)})`;
+      if (stage.style.transform !== transform) stage.style.transform = transform;
     },
     [stageRef, facing],
   );
@@ -292,7 +331,22 @@ export function useGestures(options: UseGesturesOptions) {
         repeatWaitMs: 0,
         fps: 0,
       });
-      return;
+      if (!prewarm) return;
+      // Load the hand model while the page is idle so "Enable camera" goes
+      // straight to tracking instead of waiting on the download + GPU setup.
+      const idle = (window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      });
+      const warm = () => void getRecognizer().catch(() => {
+        // Surface the real error when the camera actually starts.
+      });
+      if (idle.requestIdleCallback) {
+        const id = idle.requestIdleCallback(warm, { timeout: 3000 });
+        return () => idle.cancelIdleCallback?.(id);
+      }
+      const id = window.setTimeout(warm, 1500);
+      return () => window.clearTimeout(id);
     }
 
     const video = videoRef.current;
@@ -305,8 +359,9 @@ export function useGestures(options: UseGesturesOptions) {
     let stopCamera: (() => void) | null = null;
     let frames = 0;
     let fpsWindowStart = performance.now();
+    let lastVideoTime = -1;
     let lastUi = 0;
-    let lastOverlay = 0;
+    let lastUiKey = "";
     let configuredHands: 1 | 2 | null = null;
 
     const schedule = (tick: (now: number) => void) => {
@@ -372,8 +427,18 @@ export function useGestures(options: UseGesturesOptions) {
         if (cancelled) return;
 
         if (video.readyState >= 2 && video.videoWidth > 0) {
+          // rAF fallback can fire several times for one camera frame. Skip
+          // duplicate work rather than rerunning MediaPipe on the same pixels.
+          if (!usingVideoFrame) {
+            if (video.currentTime === lastVideoTime) {
+              schedule(tick);
+              return;
+            }
+            lastVideoTime = video.currentTime;
+          }
           try {
-            const desiredHands: 1 | 2 = numberModeRef.current || !twoHandsRef.current ? 1 : 2;
+            const desiredHands: 1 | 2 =
+              customModeRef.current ? 2 : numberModeRef.current || !twoHandsRef.current ? 1 : 2;
             if (configuredHands !== desiredHands) {
               try {
                 await recognizer.setOptions({ numHands: desiredHands });
@@ -409,20 +474,24 @@ export function useGestures(options: UseGesturesOptions) {
                   : fingerHeartHands.slice(0, 1);
             const useOneHand =
               numberModeRef.current ||
-              !twoHandsRef.current ||
+              (!customModeRef.current && !twoHandsRef.current) ||
               (alphabetModeRef.current &&
                 !hasDoubleWow &&
                 !hasDoubleFingerHeart &&
                 !hasDoubleMiddleFinger);
             const usable =
-              alphabetModeRef.current && alphabetSpecialHands.length > 0
-                ? alphabetSpecialHands
-                : useOneHand
-                  ? [tracked.reduce<TrackedHand | null>(
-                      (best, hand) => (!best || hand.confidence > best.confidence ? hand : best),
-                      null,
-                    )].filter((hand): hand is TrackedHand => hand !== null)
-                  : tracked;
+              customModeRef.current
+                ? tracked
+                    .filter((hand): hand is TrackedHand => Array.isArray(hand.landmarks) && hand.landmarks.length >= 21)
+                    .slice(0, 2)
+                : alphabetModeRef.current && alphabetSpecialHands.length > 0
+                  ? alphabetSpecialHands
+                  : useOneHand
+                    ? [tracked.reduce<TrackedHand | null>(
+                        (best, hand) => (!best || hand.confidence > best.confidence ? hand : best),
+                        null,
+                      )].filter((hand): hand is TrackedHand => hand !== null)
+                    : tracked;
 
             const landmarkFrame = {
               t: now,
@@ -434,9 +503,52 @@ export function useGestures(options: UseGesturesOptions) {
                 landmarks: hand.landmarks,
               })),
             };
+            // Custom mode: up to two hands' landmarks, copied once per frame and
+            // shared by the matcher window and the capture recorder.
+            const frameHands: Landmark[][] = customModeRef.current
+              ? usable
+                  .slice(0, 2)
+                  .map((hand) => hand.landmarks)
+                  .filter((landmarks): landmarks is Landmark[] => Array.isArray(landmarks) && landmarks.length >= 21)
+                  .map((landmarks) => landmarks.map((p) => ({ ...p })))
+              : [];
             let sign: SignResult | null;
             if (alphabetModeRef.current && alphabetSpecialHands.length > 0) {
               sign = signRecognizerRef.current.recognize([landmarkFrame]);
+            } else if (customModeRef.current) {
+              if (frameHands.length > 0) {
+                customWindowRef.current.push({ t: now, hands: frameHands });
+                customWindowRef.current = customWindowRef.current.filter((f) => now - f.t <= 2400).slice(-48);
+              } else {
+                customWindowRef.current = [];
+                customLastClassifyAtRef.current = now;
+                customMatchRef.current = null;
+              }
+              if (
+                frameHands.length > 0 &&
+                now - customLastClassifyAtRef.current >= CUSTOM_CLASSIFY_INTERVAL_MS
+              ) {
+                customLastClassifyAtRef.current = now;
+                customMatchRef.current = classifyCustomGesture(
+                  customWindowRef.current.map((f) => f.hands),
+                  customGesturesRef.current,
+                  customConfidenceRef.current,
+                );
+              }
+              const match = customMatchRef.current;
+              const primary = usable[0];
+              sign = match
+                ? {
+                    id: `custom-${match.id}`,
+                    label: match.label,
+                    phrase: match.label,
+                    gesture: "Custom_Gesture" as GestureId,
+                    hands: match.hands,
+                    side: match.hands === 1 ? primary?.side : undefined,
+                    confidence: match.confidence,
+                    model: match.hands === 2 ? "custom-landmarks-2h" : "custom-landmarks",
+                  }
+                : null;
             } else if (numberModeRef.current) {
               const hand = usable[0];
               const numberResult = classifyASLNumberWithConfidence(hand?.landmarks ?? null);
@@ -478,22 +590,24 @@ export function useGestures(options: UseGesturesOptions) {
               now,
               // A pair is easier to form by accident, so give it a longer hold.
               sign?.hands === 2 ? Math.max(dwellRef.current, 500) : dwellRef.current,
+              customModeRef.current ? customConfidenceRef.current : undefined,
             );
 
             const activeIds = new Set<string>();
-            if (sign?.hands === 1) {
+            if (customModeRef.current) {
+              // Show all tracked hands as active candidates during custom capture/recognition.
+              for (const hand of usable) activeIds.add(hand.id);
+            } else if (sign?.hands === 1) {
               const match = usable.find((hand) => hand.side === sign.side) ?? usable[0];
               if (match) activeIds.add(match.id);
             } else if (sign?.hands === 2) {
               for (const hand of usable) activeIds.add(hand.id);
             }
 
-            // Skeleton strokes are decorative; redraw at 20 fps while keeping
-            // recognition and the hold timer on every camera frame.
-            if (now - lastOverlay >= 50) {
-              lastOverlay = now;
-              drawOverlay(canvas, video, usable, activeIds);
-            }
+            // One draw per camera frame (the loop already runs once per new
+            // frame), so the skeleton moves with the video instead of
+            // skipping frames whenever frame timing jitters around 33 ms.
+            drawOverlay(canvas, video, usable, activeIds);
             applyZoom(usable);
 
             if (ringRef.current) {
@@ -502,6 +616,10 @@ export function useGestures(options: UseGesturesOptions) {
 
             if (result.locked && sign && result.locked === sign.id) {
               onLockRef.current(sign);
+            }
+
+            if (customModeRef.current) {
+              onCaptureFrameRef.current?.(frameHands.length > 0 ? frameHands : null);
             }
 
             frames += 1;
@@ -516,7 +634,7 @@ export function useGestures(options: UseGesturesOptions) {
               lastUi = now;
 
               const handCandidates: HandCandidate[] = usable.map((hand) => {
-                const practiceMode = alphabetModeRef.current || numberModeRef.current;
+                const practiceMode = alphabetModeRef.current || numberModeRef.current || customModeRef.current;
                 const gesture = practiceMode
                   ? (sign?.gesture ?? null)
                   : isGestureId(hand.gesture)
@@ -527,7 +645,12 @@ export function useGestures(options: UseGesturesOptions) {
                   side: hand.side,
                   gesture,
                   label: practiceMode
-                    ? sign?.label ?? (numberModeRef.current ? "No number" : "No letter")
+                    ? sign?.label ??
+                      (customModeRef.current
+                        ? "No custom gesture"
+                        : numberModeRef.current
+                          ? "No number"
+                          : "No letter")
                     : gesture
                       ? (phraseForGesture(gesture)?.label ?? "Gesture")
                       : "No gesture",
@@ -562,26 +685,46 @@ export function useGestures(options: UseGesturesOptions) {
                   ? "ASL alphabet data could not load. Turn alphabet mode off and retry."
                   : alphabetModeRef.current && !alphabetClassifierRef.current
                     ? "Loading ASL alphabet data…"
+                    : customModeRef.current && customGesturesRef.current.length === 0
+                      ? "Record a custom gesture, then hold it to trigger its phrase"
                     : usable.length === 0
                   ? "Show your hand to the camera"
                   : sign
                     ? result.repeatWaitMs > 0
                       ? `Same signal — repeats in ${(result.repeatWaitMs / 1000).toFixed(1)}s`
-                      : alphabetModeRef.current || numberModeRef.current
+                      : customModeRef.current
+                        ? "Hold the custom gesture to say its phrase"
+                        : alphabetModeRef.current || numberModeRef.current
                         ? `Hold the ${numberModeRef.current ? "number" : "letter"} to add it`
                         : "Hold to lock the phrase"
+                    : customModeRef.current
+                      ? "Show a recorded custom gesture"
                     : usable.length >= 2
                       ? "Two hands — no matching pair"
                       : "Show a starter gesture";
 
-              publish({
-                hands: handCandidates,
-                combo,
-                sign: signCandidate,
-                repeatWaitMs: Math.round(result.repeatWaitMs),
+              const repeatWaitMs = Math.round(result.repeatWaitMs);
+              // Re-render the camera panel only when something visible changed
+              // (percentages are shown rounded, so compare them rounded).
+              const pct = (value: number) => Math.round(value * 100);
+              const uiKey = [
+                handCandidates.map((h) => `${h.id}:${h.side}:${h.gesture}:${h.label}:${pct(h.confidence)}`).join(","),
+                combo ? `${combo.id}:${pct(combo.confidence)}` : "",
+                signCandidate ? `${signCandidate.id}:${pct(signCandidate.confidence)}:${signCandidate.side}` : "",
+                Math.ceil(repeatWaitMs / 100),
                 message,
-                state: "ready",
-              });
+              ].join("|");
+              if (uiKey !== lastUiKey) {
+                lastUiKey = uiKey;
+                publish({
+                  hands: handCandidates,
+                  combo,
+                  sign: signCandidate,
+                  repeatWaitMs,
+                  message,
+                  state: "ready",
+                });
+              }
             }
           } catch {
             // A single bad frame should never kill the loop.
@@ -615,7 +758,7 @@ export function useGestures(options: UseGesturesOptions) {
       if (ringRef.current) ringRef.current.style.setProperty("--hold", "0");
     };
     // facing: switching front/rear restarts the camera in place.
-  }, [enabled, facing, publish, applyZoom, videoRef, canvasRef, stageRef, ringRef]);
+  }, [enabled, prewarm, facing, publish, applyZoom, videoRef, canvasRef, stageRef, ringRef]);
 
   return runtime;
 }

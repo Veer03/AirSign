@@ -83,7 +83,8 @@ export async function startCamera(
       facingMode: { ideal: facing },
       width: { ideal: size.width },
       height: { ideal: size.height },
-      frameRate: { ideal: 30, max: 30 },
+      // Request smooth 30–40 fps capture where the camera supports it.
+      frameRate: { ideal: 35, max: 40 },
     },
   });
 
