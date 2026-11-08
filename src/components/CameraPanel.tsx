@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, Hand, RotateCcw, ShieldCheck } from "lucide-react";
 import type { GestureEvent, HandCandidate } from "@/lib/contracts";
 import { makeSignEvent } from "@/lib/starter-phrases";
-import { useGestures, type SignLock } from "@/engine/useGestures";
+import { useGestures, type AlphabetModel, type SignLock } from "@/engine/useGestures";
 import { SIGN_KEY, useAslWords } from "@/engine/useAslWords";
 import { glossToText, type WordGuess } from "@/engine/asl-classifier";
 import { saveDelegate, savedDelegate, type Delegate } from "@/engine/delegate";
@@ -39,9 +39,14 @@ export function CameraPanel(props: CameraPanelProps) {
   );
 }
 
-const MODES = ["starter", "words", "alphabet"] as const;
+const MODES = ["starter", "words", "alphabet", "alphabet-pretrained"] as const;
 type Mode = (typeof MODES)[number];
-const MODE_LABELS: Record<Mode, string> = { starter: "starter", words: "asl words", alphabet: "alphabet" };
+const MODE_LABELS: Record<Mode, string> = {
+  starter: "starter",
+  words: "asl words",
+  alphabet: "alphabet",
+  "alphabet-pretrained": "alphabet · pretrained",
+};
 
 function sideTag(side: HandCandidate["side"]) {
   if (side === "left") return "L";
@@ -71,17 +76,28 @@ function CameraSurface({
   // GestureRecognizer pipeline as starter). Read the URL after mount so SSR
   // and the client agree.
   const [baseMode, setBaseMode] = useState<"starter" | "words">("starter");
-  const mode: Mode = alphabetMode ? "alphabet" : baseMode;
+  // Which letter classifier the alphabet tabs use: Harshpal's kNN or the
+  // pretrained MLP. The page's "ASL A–Z" button keeps whichever was last used.
+  const [alphabetModel, setAlphabetModel] = useState<AlphabetModel>("knn");
+  const mode: Mode = alphabetMode
+    ? alphabetModel === "pretrained"
+      ? "alphabet-pretrained"
+      : "alphabet"
+    : baseMode;
   useEffect(() => {
     const fromUrl = new URLSearchParams(window.location.search).get("mode");
     if (fromUrl === "words") setBaseMode("words");
-    if (fromUrl === "alphabet") onAlphabetModeChange?.(true);
+    if (fromUrl === "alphabet" || fromUrl === "alphabet-pretrained") {
+      setAlphabetModel(fromUrl === "alphabet-pretrained" ? "pretrained" : "knn");
+      onAlphabetModeChange?.(true);
+    }
     // Mount only: the URL seeds the initial mode.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const switchMode = useCallback(
     (next: Mode) => {
-      if (next === "alphabet") {
+      if (next === "alphabet" || next === "alphabet-pretrained") {
+        setAlphabetModel(next === "alphabet-pretrained" ? "pretrained" : "knn");
         onAlphabetModeChange?.(true);
       } else {
         onAlphabetModeChange?.(false);
@@ -153,6 +169,7 @@ function CameraSurface({
     repeatMs,
     twoHands,
     alphabetMode,
+    alphabetModel,
     onLock: handleLock,
     videoRef,
     canvasRef,
@@ -436,7 +453,11 @@ function CameraSurface({
             />
 
             <p className="label pointer-events-none absolute bottom-4 right-4 z-10 hidden bg-black/50 px-2 py-1 !text-[8px] backdrop-blur sm:block">
-              {alphabetMode ? "ASL fingerspelling · letters only" : "starter gestures · not sign language"}
+              {alphabetMode
+                ? alphabetModel === "pretrained"
+                  ? "ASL fingerspelling · pretrained MLP (CC BY-NC)"
+                  : "ASL fingerspelling · dataset kNN"
+                : "starter gestures · not sign language"}
             </p>
           </>
         ) : null}

@@ -50,7 +50,10 @@ function fallbackHash(input: string): string {
   return (h2 >>> 0).toString(16).padStart(8, "0") + (h1 >>> 0).toString(16).padStart(8, "0");
 }
 
-const audioKey = (text: string, voice: string) => `audio:${voice}:${text}`;
+// Bump the version when the server's TTS request changes (v2: language pinned),
+// so clips cached from the old request are not replayed.
+const AUDIO_CACHE_VERSION = 2;
+const audioKey = (text: string, voice: string) => `audio:v${AUDIO_CACHE_VERSION}:${voice}:${text}`;
 
 export async function getCachedAudio(text: string, voice: string): Promise<Blob | undefined> {
   try {

@@ -35,6 +35,16 @@ const models = [
     file: "asl_signs_labels.json",
     url: "https://huggingface.co/sign/kaggle-asl-signs-1st-place/resolve/main/sign_to_prediction_index_map.json",
   },
+  // "alphabet · pretrained" tab: static ASL letters from 21 hand landmarks
+  // (CC BY-NC 4.0): https://huggingface.co/nocontextdoruk/asl-landmark-mlp
+  {
+    file: "asl_alphabet.onnx",
+    url: "https://huggingface.co/nocontextdoruk/asl-landmark-mlp/resolve/main/mlp_asl.onnx",
+  },
+  {
+    file: "asl_alphabet_labels.json",
+    url: "https://huggingface.co/nocontextdoruk/asl-landmark-mlp/resolve/main/mlp_classes.json",
+  },
 ];
 
 async function exists(p) {

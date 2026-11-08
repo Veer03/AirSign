@@ -19,6 +19,11 @@ import { LandmarkBuffer } from "./landmark-buffer";
 import { LocalStubRecognizer, type SignRecognizer, type SignResult } from "./sign-recognizer";
 import { HAND_CONNECTIONS, type Landmark } from "./landmarks";
 import { getASLAlphabetClassifier, type ASLAlphabetClassifier } from "./asl-alphabet";
+import { getPretrainedAlphabetClassifier } from "./asl-alphabet-pretrained";
+
+/** Which letter classifier alphabet mode uses. Both share classify(points, side). */
+export type AlphabetModel = "knn" | "pretrained";
+type AlphabetClassifier = Pick<ASLAlphabetClassifier, "classify">;
 
 export type SignLock = {
   id: string;
@@ -41,6 +46,8 @@ export type UseGesturesOptions = {
   twoHands: boolean;
   /** Use the supplied fingerspelling dataset to recognize static ASL letters. */
   alphabetMode: boolean;
+  /** "knn" = Harshpal's dataset lookup (default); "pretrained" = online MLP. */
+  alphabetModel?: AlphabetModel;
   onLock: LockHandler;
   videoRef: RefObject<HTMLVideoElement | null>;
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -158,6 +165,7 @@ function unionBounds(hands: TrackedHand[]) {
 export function useGestures(options: UseGesturesOptions) {
   const { enabled, dwellMs, repeatMs, twoHands, alphabetMode, onLock, videoRef, canvasRef, stageRef, ringRef } =
     options;
+  const alphabetModel: AlphabetModel = options.alphabetModel ?? "knn";
 
   const [runtime, setRuntime] = useState<GestureRuntime>({
     state: "idle",
@@ -172,7 +180,8 @@ export function useGestures(options: UseGesturesOptions) {
   const onLockRef = useRef(onLock);
   const twoHandsRef = useRef(twoHands);
   const alphabetModeRef = useRef(alphabetMode);
-  const alphabetClassifierRef = useRef<ASLAlphabetClassifier | null>(null);
+  const alphabetClassifierRef = useRef<AlphabetClassifier | null>(null);
+  const alphabetModelRef = useRef<AlphabetModel>(alphabetModel);
   const alphabetErrorRef = useRef(false);
   const dwellRef = useRef(dwellMs);
   const trackerRef = useRef(new HandTracker());
@@ -214,18 +223,25 @@ export function useGestures(options: UseGesturesOptions) {
     }
 
     alphabetErrorRef.current = false;
+    // Switching model drops the old classifier so the loop never mixes them.
+    if (alphabetModelRef.current !== alphabetModel) alphabetClassifierRef.current = null;
+    alphabetModelRef.current = alphabetModel;
     if (!alphabetClassifierRef.current) {
       publish({ message: "Loading ASL alphabet data…", sign: null, combo: null });
-      void getASLAlphabetClassifier().then(
+      const load: Promise<AlphabetClassifier> =
+        alphabetModel === "pretrained" ? getPretrainedAlphabetClassifier() : getASLAlphabetClassifier();
+      void load.then(
         (classifier) => {
-          alphabetClassifierRef.current = classifier;
+          // Ignore a load that finished after the user switched model again.
+          if (alphabetModelRef.current === alphabetModel) alphabetClassifierRef.current = classifier;
         },
-        () => {
+        (error) => {
+          console.error("[alphabet] failed to load", alphabetModel, error);
           alphabetErrorRef.current = true;
         },
       );
     }
-  }, [alphabetMode, publish]);
+  }, [alphabetMode, alphabetModel, publish]);
 
   const applyZoom = useCallback(
     (hands: TrackedHand[]) => {
@@ -384,7 +400,7 @@ export function useGestures(options: UseGesturesOptions) {
                     hands: 1,
                     side: letter.side,
                     confidence: letter.confidence,
-                    model: "asl-landmarks-knn",
+                    model: alphabetModelRef.current === "pretrained" ? "asl-landmark-mlp" : "asl-landmarks-knn",
                   }
                 : null;
             } else {

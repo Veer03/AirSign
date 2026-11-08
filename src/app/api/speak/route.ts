@@ -23,6 +23,12 @@ const ENV_VOICE_IDS = {
   energetic: process.env.ELEVENLABS_VOICE_ENERGETIC,
 } as const;
 
+/**
+ * flash_v2_5 is multilingual and auto-detects the language, which goes wrong
+ * on short inputs ("A", "Stop", "Yes") and gives odd accents. Always English.
+ */
+const LANGUAGE_CODE = "en";
+
 function error(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });
 }
@@ -69,6 +75,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         text: parsed.data.text,
         model_id: "eleven_flash_v2_5",
+        language_code: LANGUAGE_CODE,
         voice_settings: {
           stability: 0.4,
           similarity_boost: 0.75,
