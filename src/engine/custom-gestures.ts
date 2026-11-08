@@ -52,11 +52,14 @@ export function detectCustomGesture(
   // from an open pinch or a closed fist across either hand orientation.
   const indexOutFromPalm = index > 0.9;
   const otherFingersCurled = middle < 1.2 && ring < 1.2 && pinky < 1.2;
-  if (pinch < 0.75 && indexOutFromPalm && otherFingersCurled) {
+  // Require a clear thumb/index pinch. The old 0.75 palm-length threshold
+  // also accepted loose poses where the fingertips were visibly apart.
+  const fingerHeartPinch = 0.45;
+  if (pinch < fingerHeartPinch && indexOutFromPalm && otherFingersCurled) {
     return {
       gesture: "Finger_Heart",
       confidence: poseConfidence([
-        clarity(pinch, 0.75, 0.35),
+        clarity(pinch, fingerHeartPinch, 0.3),
         clarity(index, 0.9, 1.1),
         clarity(middle, 1.2, 0.95),
         clarity(ring, 1.2, 0.95),
