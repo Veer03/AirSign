@@ -11,7 +11,11 @@ const VOXELS = [
   { left: "45%", top: "82%", size: 16, dur: "9s", delay: "-4s", tone: "warm" },
 ] as const;
 
-export function PixelBackdrop({ dense = false }: { dense?: boolean }) {
+export function PixelBackdrop({ dense = false, matte = false }: { dense?: boolean; matte?: boolean }) {
+  if (matte) {
+    return <div aria-hidden className="fixed inset-0 -z-10 bg-[#080808]" />;
+  }
+
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-black">
       <div className="pixel-grid grid-drift absolute inset-0 opacity-80" />
