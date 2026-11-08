@@ -162,7 +162,7 @@ function CameraSurface({
               >
                 <Camera className="h-4 w-4" /> Enable camera
               </button>
-              <p className="label mt-4 !text-[9px]">or press keys 1–8</p>
+              <p className="label mt-4 !text-[9px]">or press keys 1–9</p>
             </div>
           </div>
         ) : null}
@@ -294,7 +294,7 @@ function CameraSurface({
           Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or
           uploaded.
         </p>
-        <p className="label !text-[9px]">keys 1–8 = phrases</p>
+        <p className="label !text-[9px]">keys 1–9 = phrases</p>
       </div>
     </PixelPanel>
   );

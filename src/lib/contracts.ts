@@ -11,7 +11,8 @@ export type GestureId =
   | "Closed_Fist"
   | "Pointing_Up"
   | "ILoveYou"
-  | "Middle_Finger";
+  | "Middle_Finger"
+  | "Finger_Heart";
 
 export type GestureSource = "camera" | "keyboard" | "custom";
 
