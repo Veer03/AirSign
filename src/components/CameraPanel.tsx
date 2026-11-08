@@ -156,7 +156,7 @@ function CameraSurface({
               <h2 className="text-lg font-medium">Turn on the camera</h2>
               <p className="mt-2 text-sm text-white/60">
                 {alphabetMode
-                  ? "Show one static ASL alphabet letter, or press its A–Z key."
+                  ? "Show one static ASL letter or the Wow pose, or press its A–Z key."
                   : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
                 The video stays in this browser — only text is sent to the server.
               </p>
@@ -210,7 +210,11 @@ function CameraSurface({
                   )}
                 />
                 {alphabetMode
-                  ? handCount === 0
+                  ? sign?.phrase === "Wow!"
+                    ? handCount === 2
+                      ? "two Wow hands"
+                      : "Wow sign"
+                    : handCount === 0
                     ? "show one hand"
                     : "ASL alphabet hand"
                   : handCount === 0
@@ -294,7 +298,7 @@ function CameraSurface({
             />
 
             <p className="label pointer-events-none absolute bottom-4 right-4 z-10 hidden bg-black/50 px-2 py-1 !text-[8px] backdrop-blur sm:block">
-              {alphabetMode ? "ASL fingerspelling · letters only" : "starter gestures · not sign language"}
+              {alphabetMode ? "ASL fingerspelling + Wow pose" : "starter gestures · not sign language"}
             </p>
           </>
         ) : null}
@@ -307,7 +311,7 @@ function CameraSurface({
             : "Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or uploaded."}
         </p>
         <p className="label !text-[9px]">
-          {alphabetMode ? "ASL alphabet · static A–Z poses · keys A–Z" : "keys 1–9 = phrases"}
+          {alphabetMode ? "ASL alphabet · static A–Z poses + Wow · keys A–Z" : "keys 1–9 = phrases"}
         </p>
       </div>
     </PixelPanel>

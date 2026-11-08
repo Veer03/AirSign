@@ -353,12 +353,39 @@ export function useGestures(options: UseGesturesOptions) {
           try {
             const frame = detect(recognizer, video, now);
             const tracked = trackerRef.current.update(frame.hands, now);
-            const useOneHand = alphabetModeRef.current || !twoHandsRef.current;
-            const usable = useOneHand
-              ? [...tracked].sort((a, b) => b.confidence - a.confidence).slice(0, 1)
-              : tracked;
+            const wowHands = tracked.filter(
+              (hand) => hand.gesture === "Wow" && hand.confidence >= 0.5,
+            );
+            const fingerHeartHands = tracked.filter(
+              (hand) => hand.gesture === "Finger_Heart" && hand.confidence >= 0.5,
+            );
+            const middleFingerHands = tracked.filter(
+              (hand) => hand.gesture === "Middle_Finger" && hand.confidence >= 0.5,
+            );
+            const hasDoubleWow = twoHandsRef.current && wowHands.length >= 2;
+            const hasDoubleFingerHeart = twoHandsRef.current && fingerHeartHands.length >= 2;
+            const hasDoubleMiddleFinger = twoHandsRef.current && middleFingerHands.length >= 2;
+            const alphabetSpecialHands = hasDoubleWow
+              ? wowHands.slice(0, 2)
+              : hasDoubleFingerHeart
+                ? fingerHeartHands.slice(0, 2)
+                : hasDoubleMiddleFinger
+                  ? middleFingerHands.slice(0, 2)
+                  : fingerHeartHands.slice(0, 1);
+            const useOneHand =
+              !twoHandsRef.current ||
+              (alphabetModeRef.current &&
+                !hasDoubleWow &&
+                !hasDoubleFingerHeart &&
+                !hasDoubleMiddleFinger);
+            const usable =
+              alphabetModeRef.current && alphabetSpecialHands.length > 0
+                ? alphabetSpecialHands
+                : useOneHand
+                  ? [...tracked].sort((a, b) => b.confidence - a.confidence).slice(0, 1)
+                  : tracked;
 
-            bufferRef.current.push({
+            const landmarkFrame = {
               t: now,
               hands: usable.map((hand) => ({
                 id: hand.id,
@@ -367,10 +394,13 @@ export function useGestures(options: UseGesturesOptions) {
                 confidence: hand.confidence,
                 landmarks: hand.landmarks,
               })),
-            });
+            };
+            bufferRef.current.push(landmarkFrame);
 
             let sign: SignResult | null;
-            if (alphabetModeRef.current) {
+            if (alphabetModeRef.current && alphabetSpecialHands.length > 0) {
+              sign = signRecognizerRef.current.recognize([landmarkFrame]);
+            } else if (alphabetModeRef.current) {
               const hand = usable[0];
               const letter = alphabetClassifierRef.current?.classify(hand?.landmarks, hand?.side);
               sign = letter
