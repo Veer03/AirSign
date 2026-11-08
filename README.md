@@ -8,13 +8,23 @@ A person makes a gesture, AirSign offers a phrase, the person confirms it, and a
 
 ## Status
 
-**Docs and plan only.** The concept, architecture, design system, roadmap, and per-person tasks are written. The Next.js base site is not built yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for build order.
+**Base site v1 runs, with a two-hand foundation.** The landing page, the `/app` workspace, on-device MediaPipe hand tracking for up to two hands, hold-to-lock, single-hand gestures, two-hand combo phrases, the sentence strip, keyboard fallback, reply captions, and the ElevenLabs `/api/speak` route are implemented. Teach-a-gesture, Gemini gist, and the n8n alert are not built yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the remaining order.
+
+Recognition is behind a `SignRecognizer` interface (`src/engine/sign-recognizer.ts`). Today a local stub resolves MediaPipe handshapes and two-hand pairs; a trained on-device landmark model can replace it without changing the engine or UI. There is intentionally no `/api/recognize` route in v1 because recognition runs on-device.
+
+### Verified so far
+
+- `npm run build`, `npm run typecheck`, and `npm test` pass (28 tests).
+- MediaPipe wasm + `gesture_recognizer.task` load from `public/` and the video-mode pipeline starts with a fake camera device (1280×720, tracking active, no runtime exceptions).
+- Unit tests cover hand-tracker continuity, combo matching, the landmark window, and the sign stabilizer.
+- Recognition against a real hand, a real two-hand pair, and live ElevenLabs audio still need a manual test with a camera and an API key.
 
 ## What it does (planned)
 
-- **On-device hand tracking.** Camera view with a hand-skeleton overlay, mirrored, processed in the browser.
-- **Starter gestures.** Built-in gestures mapped to editable phrases. These are starter gestures, not ASL.
-- **Hold to lock.** A circular progress ring with an adjustable dwell time (500–2000 ms).
+- **On-device hand tracking.** Camera view with a hand-skeleton overlay for one or two hands, mirrored, processed in the browser.
+- **Starter gestures.** Built-in handshapes mapped to editable phrases. These are starter gestures, not ASL.
+- **Two-hand combos.** Both hands are tracked independently and only a known pair can lock while both are recognized. A single hand still locks normally when the other hand is neutral. The two-hand toggle can be turned off for speed.
+- **Hold to lock.** A circular progress ring with an adjustable dwell time (100–900 ms).
 - **Live phrase suggestions.** The top candidate and confidence appear while the hand is tracked; the sentence preview updates as phrases lock.
 - **Sentence strip.** Locked phrases become chips that can be removed or reordered.
 - **Confirm, then speak.** Nothing is spoken until the user confirms. ElevenLabs provides the voice.
@@ -24,9 +34,9 @@ A person makes a gesture, AirSign offers a phrase, the person confirms it, and a
 
 ## Privacy
 
-**Video never leaves the browser.** Hand tracking and gesture matching run on-device. Only text is sent to the server, and only when the user confirms a phrase or requests a gist.
+**Video never leaves the browser.** Hand tracking, landmark buffering, and gesture matching run on-device. Only text is sent to the server, and only when the user confirms a phrase or requests a gist.
 
-## Base site (planned)
+## Base site
 
 Two routes with one design system:
 
@@ -56,14 +66,19 @@ The base site is built so features plug in without rewrites: shared contracts, `
 
 Exact versions are pinned after install and committed in the lockfile. Research notes and current versions: [docs/RESEARCH.md](docs/RESEARCH.md).
 
-## Quick start (once the app is scaffolded)
+## Quick start
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in your own keys
-npm run setup:assets         # copy MediaPipe wasm and download the gesture model
+npm run setup:assets        # copy MediaPipe wasm and download the gesture model
+cp .env.example .env.local   # add your own keys
 npm run dev
 ```
+
+Add `ELEVENLABS_API_KEY` to `.env.local` to enable the voice. Without it the app still
+tracks gestures and fills the sentence strip, and `/api/speak` returns a clear 503.
+Optional: set `ELEVENLABS_VOICE_WARM`, `ELEVENLABS_VOICE_CALM`, and
+`ELEVENLABS_VOICE_ENERGETIC` to your own ElevenLabs voice IDs.
 
 Camera and microphone access require HTTPS or `localhost`.
 
@@ -75,7 +90,7 @@ public/          self-hosted MediaPipe wasm and gesture model (generated)
 scripts/         asset setup
 src/app/         routes: landing, workspace, API
 src/components/  UI, landing motion components, mocks
-src/engine/      camera, worker, normalization, kNN, hold-to-lock
+src/engine/      camera, MediaPipe recognizer, hand tracker, stabilizers, combos, landmark buffer, sign-recognizer boundary
 src/voice/       TTS, captions, audio cache
 src/lib/         contracts, schemas, ports, storage, starter phrases
 ```
@@ -102,7 +117,8 @@ src/lib/         contracts, schemas, ports, storage, starter phrases
 
 ## Limits and honesty
 
-- AirSign is **not** an interpreter and **not** ASL translation. It does not translate sign language. The starter gestures are arbitrary mappings, labeled as such in the UI.
+- AirSign is **not** an interpreter and **not** ASL translation. It does not translate sign language. The starter gestures and two-hand combos are arbitrary mappings, labeled as such in the UI.
+- MediaPipe classifies each hand into 7 static handshapes. It does not understand motion, contact, facial expression, or grammar, so two-hand support is a foundation, not sign-language recognition.
 - It is a helper for small moments where no interpreter is available. The honest next step is co-design with Deaf users.
 - The AI never claims certainty. It shows candidates and confidence, and says "not sure" when confidence is low.
 - Nothing is spoken until the user confirms it.

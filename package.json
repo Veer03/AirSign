@@ -1,24 +1,35 @@
 {
   "name": "airsign",
   "version": "1.0.0",
-  "description": "**A communication helper for quick, high-stakes moments — not an interpreter.**",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
+  "private": true,
+  "description": "A communication helper for quick, high-stakes moments — not an interpreter.",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "setup:assets": "node scripts/setup-assets.mjs"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Veer03/AirSign.git"
+  "dependencies": {
+    "@mediapipe/tasks-vision": "1.2.2",
+    "clsx": "^2.1.1",
+    "idb-keyval": "^6.2.2",
+    "lucide-react": "^0.552.0",
+    "motion": "14.10.1",
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tailwind-merge": "^3.4.0",
+    "zod": "^4.1.12"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/Veer03/AirSign/issues"
-  },
-  "homepage": "https://github.com/Veer03/AirSign#readme"
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.5",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "tailwindcss": "4.3.5",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
 }
