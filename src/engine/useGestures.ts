@@ -15,7 +15,6 @@ import { describeCameraError, startCamera } from "./camera";
 import { detect, getRecognizer, resetRecognizer } from "./recognizer";
 import { isGestureId, SignStabilizer } from "./stabilize";
 import { HandTracker, type TrackedHand } from "./hand-tracker";
-import { LandmarkBuffer } from "./landmark-buffer";
 import { LocalStubRecognizer, type SignRecognizer, type SignResult } from "./sign-recognizer";
 import { HAND_CONNECTIONS, type Landmark } from "./landmarks";
 import { getASLAlphabetClassifier, type ASLAlphabetClassifier } from "./asl-alphabet";
@@ -111,7 +110,7 @@ function drawOverlay(
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     ctx.shadowColor = glow;
-    ctx.shadowBlur = width / 40;
+    ctx.shadowBlur = width / 100;
     ctx.lineWidth = line;
 
     for (const [from, to] of CONNECTED) {
@@ -177,7 +176,6 @@ export function useGestures(options: UseGesturesOptions) {
   const alphabetErrorRef = useRef(false);
   const dwellRef = useRef(dwellMs);
   const trackerRef = useRef(new HandTracker());
-  const bufferRef = useRef(new LandmarkBuffer());
   const signRecognizerRef = useRef<SignRecognizer>(new LocalStubRecognizer());
   const signStabilizerRef = useRef(new SignStabilizer(dwellMs, 2, ABORT_COOLDOWN_MS));
   const zoomRef = useRef({ cx: 0.5, cy: 0.5, z: 1, primed: false });
@@ -188,7 +186,6 @@ export function useGestures(options: UseGesturesOptions) {
 
   useEffect(() => {
     twoHandsRef.current = twoHands;
-    bufferRef.current.clear();
     signStabilizerRef.current.reset();
   }, [twoHands]);
 
@@ -208,7 +205,6 @@ export function useGestures(options: UseGesturesOptions) {
   useEffect(() => {
     alphabetModeRef.current = alphabetMode;
     numberModeRef.current = numberMode;
-    bufferRef.current.clear();
     signStabilizerRef.current.reset();
     if (!alphabetMode) {
       alphabetErrorRef.current = false;
@@ -264,7 +260,6 @@ export function useGestures(options: UseGesturesOptions) {
   useEffect(() => {
     if (!enabled) {
       trackerRef.current.reset();
-      bufferRef.current.clear();
       signStabilizerRef.current.reset();
       publish({
         state: "idle",
@@ -289,6 +284,8 @@ export function useGestures(options: UseGesturesOptions) {
     let frames = 0;
     let fpsWindowStart = performance.now();
     let lastUi = 0;
+    let lastOverlay = 0;
+    let configuredHands: 1 | 2 | null = null;
 
     const schedule = (tick: (now: number) => void) => {
       if (cancelled) return;
@@ -347,14 +344,25 @@ export function useGestures(options: UseGesturesOptions) {
       if (cancelled) return;
       publish({ state: "ready", message: "Show your hand to the camera" });
       trackerRef.current.reset();
-      bufferRef.current.clear();
       signStabilizerRef.current.reset();
 
-      const tick = (now: number) => {
+      const tick = async (now: number) => {
         if (cancelled) return;
 
         if (video.readyState >= 2 && video.videoWidth > 0) {
           try {
+            const desiredHands: 1 | 2 = numberModeRef.current || !twoHandsRef.current ? 1 : 2;
+            if (configuredHands !== desiredHands) {
+              try {
+                await recognizer.setOptions({ numHands: desiredHands });
+              } catch {
+                // Keep tracking with the current hand limit if the runtime
+                // cannot update it on this browser or graphics driver.
+              }
+              configuredHands = desiredHands;
+              if (cancelled) return;
+            }
+
             const frame = detect(recognizer, video, now);
             const tracked = trackerRef.current.update(frame.hands, now);
             const wowHands = tracked.filter(
@@ -387,7 +395,10 @@ export function useGestures(options: UseGesturesOptions) {
               alphabetModeRef.current && alphabetSpecialHands.length > 0
                 ? alphabetSpecialHands
                 : useOneHand
-                  ? [...tracked].sort((a, b) => b.confidence - a.confidence).slice(0, 1)
+                  ? [tracked.reduce<TrackedHand | null>(
+                      (best, hand) => (!best || hand.confidence > best.confidence ? hand : best),
+                      null,
+                    )].filter((hand): hand is TrackedHand => hand !== null)
                   : tracked;
 
             const landmarkFrame = {
@@ -400,8 +411,6 @@ export function useGestures(options: UseGesturesOptions) {
                 landmarks: hand.landmarks,
               })),
             };
-            bufferRef.current.push(landmarkFrame);
-
             let sign: SignResult | null;
             if (alphabetModeRef.current && alphabetSpecialHands.length > 0) {
               sign = signRecognizerRef.current.recognize([landmarkFrame]);
@@ -436,7 +445,9 @@ export function useGestures(options: UseGesturesOptions) {
                   }
                 : null;
             } else {
-              sign = signRecognizerRef.current.recognize(bufferRef.current.snapshot(400));
+              // The current local recognizer only uses the newest frame. Avoid
+              // copying and filtering the rolling landmark buffer on every tick.
+              sign = signRecognizerRef.current.recognize([landmarkFrame]);
             }
             const result = signStabilizerRef.current.push(
               sign ? { sign: sign.id, confidence: sign.confidence } : null,
@@ -453,7 +464,12 @@ export function useGestures(options: UseGesturesOptions) {
               for (const hand of usable) activeIds.add(hand.id);
             }
 
-            drawOverlay(canvas, video, usable, activeIds);
+            // Skeleton strokes are decorative; redraw at 20 fps while keeping
+            // recognition and the hold timer on every camera frame.
+            if (now - lastOverlay >= 50) {
+              lastOverlay = now;
+              drawOverlay(canvas, video, usable, activeIds);
+            }
             applyZoom(usable);
 
             if (ringRef.current) {
@@ -569,7 +585,6 @@ export function useGestures(options: UseGesturesOptions) {
       }
       stopCamera?.();
       trackerRef.current.reset();
-      bufferRef.current.clear();
       signStabilizerRef.current.reset();
       zoomRef.current = { cx: 0.5, cy: 0.5, z: 1, primed: false };
       if (stageRef.current) stageRef.current.style.transform = "";

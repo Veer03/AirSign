@@ -123,7 +123,11 @@ export default function WorkspacePage() {
   }, [chips, speak]);
 
   return (
-    <div data-reduced={settings.reducedMotion ? "true" : "false"} className="relative min-h-screen">
+    <div
+      data-reduced={settings.reducedMotion ? "true" : "false"}
+      data-camera-active={cameraOn ? "true" : "false"}
+      className="relative min-h-screen"
+    >
       <PixelBackdrop />
 
       <header className="sticky top-0 z-30 border-b border-white/70 bg-black/90 backdrop-blur">
