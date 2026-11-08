@@ -86,6 +86,8 @@ export type Settings = {
   reducedMotion: boolean;
   /** Recognize two-hand combos. Off = best single hand only. */
   twoHands: boolean;
+  /** Minimum custom-gesture match confidence required before it can trigger. */
+  customConfidence: number;
 };
 
 export type SpeakRequest = {
@@ -108,6 +110,7 @@ export const DEFAULT_SETTINGS: Settings = {
   textScale: 1,
   reducedMotion: false,
   twoHands: true,
+  customConfidence: 0.2,
 };
 
 export const ABORT_COOLDOWN_MS = 800;

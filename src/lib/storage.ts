@@ -40,6 +40,9 @@ export async function loadSettings(): Promise<Settings> {
       settings.repeatMs = DEFAULT_SETTINGS.repeatMs;
     }
     settings.repeatMs = Math.min(settings.repeatMs, 8000);
+    if (![0.2, 0.3, 0.45].includes(Number(settings.customConfidence))) {
+      settings.customConfidence = DEFAULT_SETTINGS.customConfidence;
+    }
     return settings;
   } catch {
     return DEFAULT_SETTINGS;

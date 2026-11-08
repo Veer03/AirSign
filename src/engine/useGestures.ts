@@ -53,6 +53,8 @@ export type UseGesturesOptions = {
   numberMode: boolean;
   /** User-recorded custom gestures. Only active in custom mode. */
   customMode?: boolean;
+  /** Confidence floor for matching a saved custom gesture. */
+  customConfidence?: number;
   customGestures?: StoredCustomGesture[];
   /** Latest usable-hand landmarks for custom capture (1 or 2 hands). */
   onCaptureFrame?: (hands: Landmark[][] | null) => void;
@@ -84,6 +86,7 @@ export type GestureRuntime = {
 };
 
 const CONNECTED = HAND_CONNECTIONS;
+const CUSTOM_CLASSIFY_INTERVAL_MS = 80;
 
 function drawOverlay(
   canvas: HTMLCanvasElement,
@@ -184,6 +187,7 @@ export function useGestures(options: UseGesturesOptions) {
     options;
   const alphabetModel: AlphabetModel = options.alphabetModel ?? "knn";
   const customMode = options.customMode ?? false;
+  const customConfidence = options.customConfidence ?? 0.2;
   const customGestures = options.customGestures ?? [];
   const prewarm = options.prewarm ?? true;
   const facing: CameraFacing = options.facing ?? "user";
@@ -206,6 +210,7 @@ export function useGestures(options: UseGesturesOptions) {
   const alphabetModelRef = useRef<AlphabetModel>(alphabetModel);
   const numberModeRef = useRef(numberMode);
   const customModeRef = useRef(customMode);
+  const customConfidenceRef = useRef(customConfidence);
   const customGesturesRef = useRef(customGestures);
   const alphabetErrorRef = useRef(false);
   const dwellRef = useRef(dwellMs);
@@ -213,6 +218,8 @@ export function useGestures(options: UseGesturesOptions) {
   const signRecognizerRef = useRef<SignRecognizer>(new LocalStubRecognizer());
   const signStabilizerRef = useRef(new SignStabilizer(dwellMs, 2, ABORT_COOLDOWN_MS));
   const customWindowRef = useRef<{ t: number; hands: Landmark[][] }[]>([]);
+  const customLastClassifyAtRef = useRef(0);
+  const customMatchRef = useRef<ReturnType<typeof classifyCustomGesture>>(null);
   const zoomRef = useRef({ cx: 0.5, cy: 0.5, z: 1, primed: false });
 
   useEffect(() => {
@@ -245,8 +252,11 @@ export function useGestures(options: UseGesturesOptions) {
     alphabetModeRef.current = alphabetMode;
     numberModeRef.current = numberMode;
     customModeRef.current = customMode;
+    customConfidenceRef.current = customConfidence;
     customGesturesRef.current = customGestures;
     customWindowRef.current = [];
+    customLastClassifyAtRef.current = 0;
+    customMatchRef.current = null;
     signStabilizerRef.current.reset();
     if (!alphabetMode) {
       alphabetErrorRef.current = false;
@@ -272,7 +282,7 @@ export function useGestures(options: UseGesturesOptions) {
         },
       );
     }
-  }, [alphabetMode, alphabetModel, numberMode, customMode, customGestures, publish]);
+  }, [alphabetMode, alphabetModel, numberMode, customMode, customConfidence, customGestures, publish]);
 
   const applyZoom = useCallback(
     (hands: TrackedHand[]) => {
@@ -511,8 +521,21 @@ export function useGestures(options: UseGesturesOptions) {
                 customWindowRef.current = customWindowRef.current.filter((f) => now - f.t <= 2400).slice(-48);
               } else {
                 customWindowRef.current = [];
+                customLastClassifyAtRef.current = now;
+                customMatchRef.current = null;
               }
-              const match = classifyCustomGesture(customWindowRef.current.map((f) => f.hands), customGesturesRef.current);
+              if (
+                frameHands.length > 0 &&
+                now - customLastClassifyAtRef.current >= CUSTOM_CLASSIFY_INTERVAL_MS
+              ) {
+                customLastClassifyAtRef.current = now;
+                customMatchRef.current = classifyCustomGesture(
+                  customWindowRef.current.map((f) => f.hands),
+                  customGesturesRef.current,
+                  customConfidenceRef.current,
+                );
+              }
+              const match = customMatchRef.current;
               const primary = usable[0];
               sign = match
                 ? {
@@ -567,6 +590,7 @@ export function useGestures(options: UseGesturesOptions) {
               now,
               // A pair is easier to form by accident, so give it a longer hold.
               sign?.hands === 2 ? Math.max(dwellRef.current, 500) : dwellRef.current,
+              customModeRef.current ? customConfidenceRef.current : undefined,
             );
 
             const activeIds = new Set<string>();

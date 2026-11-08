@@ -234,8 +234,13 @@ export class SignStabilizer {
     this.core.reset();
   }
 
-  push(frame: SignFrame, now: number, dwellMs?: number): SignStabilizeResult {
-    if (!frame || frame.confidence < MIN_CONFIDENCE) {
+  push(
+    frame: SignFrame,
+    now: number,
+    dwellMs?: number,
+    minConfidence = MIN_CONFIDENCE,
+  ): SignStabilizeResult {
+    if (!frame || frame.confidence < minConfidence) {
       const result = this.core.push(null, now);
       return {
         candidate: null,

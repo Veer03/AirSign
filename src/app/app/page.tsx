@@ -7,7 +7,7 @@ import type { GestureEvent, GestureId, Settings } from "@/lib/contracts";
 import { DEFAULT_SETTINGS } from "@/lib/contracts";
 import { makeGestureEvent, phraseForGesture, phraseForKey, STARTER_PHRASES } from "@/lib/starter-phrases";
 import { loadCustomGestures, loadSettings, saveCustomGestures, saveSettings, type StoredCustomGesture } from "@/lib/storage";
-import { normalizeHandLandmarks } from "@/engine/asl-alphabet";
+import { normalizeCustomGestureHand } from "@/engine/asl-alphabet";
 import { useSpeak } from "@/voice/useSpeak";
 import { CameraPanel } from "@/components/CameraPanel";
 import { CustomGesturePanel } from "@/components/CustomGesturePanel";
@@ -188,12 +188,12 @@ export default function WorkspacePage() {
       const normalizeFrame = (hands: Landmark[][]): number[] | null => {
         if (!hands || hands.length === 0) return null;
         if (hands.length === 1) {
-          const one = normalizeHandLandmarks(hands[0]);
+          const one = normalizeCustomGestureHand(hands[0]);
           return one ? Array.from(one) : null;
         }
         const ordered = [...hands].sort((a, b) => (a[0]?.x ?? 0) - (b[0]?.x ?? 0)).slice(0, 2);
-        const a = normalizeHandLandmarks(ordered[0]);
-        const b = normalizeHandLandmarks(ordered[1]);
+        const a = normalizeCustomGestureHand(ordered[0]);
+        const b = normalizeCustomGestureHand(ordered[1]);
         if (!a || !b) return null;
         return [...Array.from(a), ...Array.from(b)];
       };
@@ -229,7 +229,17 @@ export default function WorkspacePage() {
           motion += Math.sqrt(d);
         }
         motion /= kept.length - 1;
-        if (motion < 0.14) {
+        // Wrist-relative handshape normalization normally removes camera-space
+        // movement, so treat a deliberate wrist path as motion too.
+        const handOffsets = hands === 2 ? [0, 63] : [0];
+        const wristExcursion = Math.max(
+          ...kept.flatMap((frame) =>
+            handOffsets.map((offset) =>
+              Math.hypot(frame[offset] - kept[0][offset], frame[offset + 1] - kept[0][offset + 1]),
+            ),
+          ),
+        );
+        if (motion < 0.14 && wristExcursion < 0.12) {
           const avg = new Array(modalLen).fill(0);
           for (const frame of kept) for (let j = 0; j < modalLen; j += 1) avg[j] += frame[j] / kept.length;
           framesToStore = [avg];
@@ -415,6 +425,7 @@ export default function WorkspacePage() {
             numberMode={numberMode}
             onNumberModeChange={setNumberMode}
             customMode={customMode}
+            customConfidence={settings.customConfidence}
             onCustomModeChange={setCustomMode}
             customGestures={customGestures}
             captureRequestId={customCaptureRequestId}
@@ -500,8 +511,10 @@ export default function WorkspacePage() {
                 captureState={customCaptureState}
                 captureStatus={customCaptureStatus}
                 draftPhrase={customDraftPhrase}
+                confidence={settings.customConfidence}
                 cameraEnabled={cameraOn}
                 onDraftPhraseChange={setCustomDraftPhrase}
+                onConfidenceChange={(customConfidence) => updateSettings({ customConfidence })}
                 onStartCapture={startCustomCapture}
                 onRemove={removeCustomGesture}
               />

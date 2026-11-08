@@ -9,8 +9,10 @@ export function CustomGesturePanel({
   captureState,
   captureStatus,
   draftPhrase,
+  confidence,
   cameraEnabled,
   onDraftPhraseChange,
+  onConfidenceChange,
   onStartCapture,
   onRemove,
 }: {
@@ -18,8 +20,10 @@ export function CustomGesturePanel({
   captureState: "idle" | "countdown" | "capturing" | "saved" | "error";
   captureStatus: string;
   draftPhrase: string;
+  confidence: number;
   cameraEnabled: boolean;
   onDraftPhraseChange: (value: string) => void;
+  onConfidenceChange: (value: number) => void;
   onStartCapture: () => void;
   onRemove: (id: string) => void;
 }) {
@@ -62,6 +66,22 @@ export function CustomGesturePanel({
           {!cameraEnabled ? "Turn the camera on first." : "3-second countdown, then perform the full gesture for ~2s (1 or 2 hands, motion captured)."}
         </span>
       </div>
+
+      <label className="block space-y-1">
+        <span className="label label-title">Match confidence to trigger</span>
+        <select
+          value={confidence}
+          onChange={(event) => onConfidenceChange(Number(event.target.value))}
+          className="h-9 w-full border border-white/25 bg-black px-2 text-sm text-white outline-none transition hover:border-white/50"
+        >
+          <option value={0.2}>20% · More forgiving</option>
+          <option value={0.3}>30% · Balanced</option>
+          <option value={0.45}>45% · More precise</option>
+        </select>
+        <span className="block text-xs text-white/50">
+          Lower confidence accepts less exact poses and motions; higher confidence helps avoid accidental triggers.
+        </span>
+      </label>
 
       {captureStatus ? (
         <p

@@ -33,6 +33,7 @@ type CameraPanelProps = {
   /** User-recorded gestures; only active while Custom is selected. */
   customMode?: boolean;
   onCustomModeChange?: (on: boolean) => void;
+  customConfidence?: number;
   customGestures?: StoredCustomGesture[];
   captureRequestId?: number;
   onCustomCaptured?: (frames: Landmark[][][]) => void;
@@ -90,6 +91,7 @@ function CameraSurface({
   onNumberModeChange,
   customMode = false,
   onCustomModeChange,
+  customConfidence = 0.2,
   customGestures = [],
   captureRequestId = 0,
   onCustomCaptured,
@@ -324,6 +326,7 @@ function CameraSurface({
     alphabetModel,
     numberMode,
     customMode: custom,
+    customConfidence,
     customGestures,
     onCaptureFrame: handleCaptureFrame,
     onLock: handleLock,
