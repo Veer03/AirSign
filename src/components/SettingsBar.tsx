@@ -14,10 +14,16 @@ export function SettingsBar({
   settings,
   onChange,
   voiceConfigured,
+  showPrivateGestureToggle = false,
+  privateGesturesEnabled = false,
+  onPrivateGesturesChange,
 }: {
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
   voiceConfigured: boolean | null;
+  showPrivateGestureToggle?: boolean;
+  privateGesturesEnabled?: boolean;
+  onPrivateGesturesChange?: (enabled: boolean) => void;
 }) {
   return (
     <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
@@ -130,6 +136,23 @@ export function SettingsBar({
       >
         Reduced motion {settings.reducedMotion ? "on" : "off"}
       </button>
+
+      {showPrivateGestureToggle && onPrivateGesturesChange ? (
+        <button
+          type="button"
+          role="switch"
+          aria-checked={privateGesturesEnabled}
+          onClick={() => onPrivateGesturesChange(!privateGesturesEnabled)}
+          className={cn(
+            "h-9 border px-3 text-xs transition",
+            privateGesturesEnabled
+              ? "border-red-400/70 bg-red-500/15 text-red-200"
+              : "border-white/25 text-white/60 hover:border-white/50",
+          )}
+        >
+          Private signs {privateGesturesEnabled ? "on" : "off"}
+        </button>
+      ) : null}
 
       <span className="label flex items-center gap-1.5 pb-2">
         <Volume2 className="h-3 w-3" />

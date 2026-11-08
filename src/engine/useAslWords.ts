@@ -213,7 +213,28 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
   }, [onWord]);
 
   const publish = useCallback((next: Partial<AslRuntime>) => {
-    setRuntime((prev) => ({ ...prev, ...next }));
+    setRuntime((prev) => {
+      // The frame loop reports hand visibility several times per second, even
+      // when the count is unchanged. Preserve the current object in that case
+      // so React can skip rendering the camera panel and its surrounding UI.
+      const keys = Object.keys(next) as (keyof AslRuntime)[];
+      const unchanged = keys.every((key) => {
+        if (key === "guesses") {
+          const before = prev.guesses;
+          const after = next.guesses;
+          return before === after || Boolean(
+            before && after && before.length === after.length &&
+            before.every((guess, index) =>
+              guess.gloss === after[index].gloss &&
+              Math.round(guess.probability * 100) === Math.round(after[index].probability * 100),
+            ),
+          );
+        }
+        return Object.is(prev[key], next[key]);
+      });
+      if (unchanged) return prev;
+      return { ...prev, ...next };
+    });
   }, []);
 
   const resetContinuous = useCallback(() => {
