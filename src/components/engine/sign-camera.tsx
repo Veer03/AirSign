@@ -13,14 +13,13 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import type { CaptureStatus, SignCameraProps } from "@/lib/contracts";
 import { REQUEST_CAPTURE_EVENT } from "@/lib/events";
 import { mockCapture } from "@/lib/mock-signs";
 import { cameraErrorMessage, startCamera, stopCamera } from "@/engine/camera";
 import { CaptureBuffer } from "@/engine/capture";
-import { createHandLandmarker } from "@/engine/hand-landmarker";
-import type { HandLandmarker, HandLandmarkerResult } from "@mediapipe/tasks-vision";
+import { createGestureRecognizer, type GestureRecognizerResult } from "@/engine/gesture-recognizer";
+import type { GestureRecognizer } from "@mediapipe/tasks-vision";
 import { normalizeHandFrame } from "@/engine/normalize";
 
 const BONES: [number, number][] = [
@@ -29,10 +28,35 @@ const BONES: [number, number][] = [
   [15, 16], [0, 17], [17, 18], [18, 19], [19, 20], [5, 9], [9, 13], [13, 17],
 ];
 
+const GESTURE_NAMES: Record<string, string> = {
+  Closed_Fist: "Closed fist",
+  Open_Palm: "Open palm",
+  Pointing_Up: "Pointing up",
+  Thumb_Down: "Thumb down",
+  Thumb_Up: "Thumb up",
+  Victory: "Victory handshape",
+  ILoveYou: "I-love-you handshape",
+};
+
+type GesturePrediction = { name: string; confidence: number; hand: string };
+
+function readGesturePredictions(result: GestureRecognizerResult | null): GesturePrediction[] {
+  if (!result) return [];
+  return result.gestures.flatMap((categories, index) => {
+    const category = categories[0];
+    if (!category || category.categoryName === "None" || category.score < 0.55) return [];
+    return [{
+      name: GESTURE_NAMES[category.categoryName] ?? category.categoryName.replaceAll("_", " "),
+      confidence: category.score,
+      hand: result.handedness[index]?.[0]?.categoryName ?? `Hand ${index + 1}`,
+    }];
+  });
+}
+
 function drawHands(
   canvas: HTMLCanvasElement,
   video: HTMLVideoElement,
-  result: HandLandmarkerResult | null,
+  result: GestureRecognizerResult | null,
 ) {
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
@@ -92,8 +116,8 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const landmarkerRef = useRef<HandLandmarker | null>(null);
-  const latestResultRef = useRef<HandLandmarkerResult | null>(null);
+  const recognizerRef = useRef<GestureRecognizer | null>(null);
+  const latestResultRef = useRef<GestureRecognizerResult | null>(null);
   const bufferRef = useRef(new CaptureBuffer());
   const rafRef = useRef<number | null>(null);
   const captureStartedRef = useRef<number | null>(null);
@@ -102,6 +126,7 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
   const [status, setStatus] = useState<CaptureStatus>("idle");
   const [message, setMessage] = useState("");
   const [handCount, setHandCount] = useState(0);
+  const [predictions, setPredictions] = useState<GesturePrediction[]>([]);
   const [fps, setFps] = useState(0);
   const [progress, setProgress] = useState(0);
   const [capturing, setCapturing] = useState(false);
@@ -115,12 +140,13 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
     captureStartedRef.current = null;
     setCapturing(false);
     setProgress(0);
-    landmarkerRef.current?.close();
-    landmarkerRef.current = null;
+    recognizerRef.current?.close();
+    recognizerRef.current = null;
     stopCamera(videoRef.current, streamRef.current);
     streamRef.current = null;
     latestResultRef.current = null;
     setHandCount(0);
+    setPredictions([]);
     setFps(0);
     setStatus("idle");
   }, []);
@@ -135,14 +161,14 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
       const video = videoRef.current;
       if (!video) throw new Error("The camera preview is not ready. Refresh and try again.");
       streamRef.current = await startCamera(video);
-      landmarkerRef.current = await createHandLandmarker();
+      recognizerRef.current = await createGestureRecognizer();
       bufferRef.current.clear();
       setStatus("watching");
     } catch (error) {
       stopCamera(videoRef.current, streamRef.current);
       streamRef.current = null;
-      landmarkerRef.current?.close();
-      landmarkerRef.current = null;
+      recognizerRef.current?.close();
+      recognizerRef.current = null;
       const cameraError = cameraErrorMessage(error);
       setMessage(cameraError.message);
       setStatus(cameraError.denied ? "denied" : "error");
@@ -150,7 +176,7 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
   }, [enabled, status]);
 
   useEffect(() => {
-    if (!streamRef.current || !landmarkerRef.current || status === "idle") return;
+    if (!streamRef.current || !recognizerRef.current || status === "idle") return;
     let cancelled = false;
     let frameNumber = 0;
     let framesThisSecond = 0;
@@ -161,13 +187,13 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
     const tick = (now: number) => {
       if (cancelled) return;
       const video = videoRef.current;
-      const landmarker = landmarkerRef.current;
-      if (video && landmarker && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      const recognizer = recognizerRef.current;
+      if (video && recognizer && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         if (video.currentTime !== lastVideoTime) {
           lastVideoTime = video.currentTime;
           frameNumber += 1;
           if (frameNumber % 2 === 0) {
-            latestResultRef.current = landmarker.detectForVideo(video, now);
+            latestResultRef.current = recognizer.recognizeForVideo(video, now);
             framesThisSecond += 1;
             if (captureStartedRef.current !== null) {
               const result = latestResultRef.current;
@@ -184,6 +210,7 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
         drawHands(canvasRef.current!, video, latestResultRef.current);
         if (now - lastUiUpdate > 250) {
           setHandCount(latestResultRef.current?.landmarks.length ?? 0);
+          setPredictions(readGesturePredictions(latestResultRef.current));
           lastUiUpdate = now;
         }
         if (now - fpsWindowStart >= 1000) {
@@ -209,7 +236,7 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
           const capture = bufferRef.current.toSignCapture(context, elapsed);
           bufferRef.current.clear();
           if (capture.frames) {
-            setMessage("Hand motion captured. AirSign is tracking hands; sign recognition is not connected yet.");
+            setMessage("Landmarks captured. The classifier above reports general handshapes; the ASL vocabulary model is next.");
             onCapture(capture);
           } else {
             setMessage("No hand was detected during that capture. Move your hand into the frame and try again.");
@@ -280,7 +307,7 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
           <span className="grid size-8 place-items-center rounded-lg bg-[var(--surface-2)] text-[var(--accent)]"><Hand className="size-4" aria-hidden="true" /></span>
           <div>
             <h2 id="camera-heading" className="text-sm font-semibold">Live hand tracking</h2>
-            <p className="text-xs text-muted-foreground">Up to two hands · processed on this device</p>
+            <p className="text-xs text-muted-foreground">Up to two hands · local gesture classifier</p>
           </div>
         </div>
         <Badge variant="outline" className={status === "watching" || status === "capturing" ? "border-[color-mix(in_srgb,var(--success)_45%,transparent)] bg-[color-mix(in_srgb,var(--success)_12%,transparent)] text-[var(--success)]" : "border-[var(--border)] text-muted-foreground"}>
@@ -317,8 +344,23 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
 
       <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="size-3.5 text-[var(--success)]" aria-hidden="true" /><span>On-device hand landmarks</span></div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="size-3.5 text-[var(--success)]" aria-hidden="true" /><span>On-device gesture predictions</span></div>
           <span className="text-xs tabular-nums text-muted-foreground">{Math.round(captureMs / 100) / 10}s capture</span>
+        </div>
+        <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface)]/70 p-3" aria-live="polite">
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Live classifier</p>
+          {predictions.length ? (
+            <ul className="mt-2 space-y-2">
+              {predictions.map((prediction) => (
+                <li key={`${prediction.hand}-${prediction.name}`} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <span className="font-medium">{prediction.name}<span className="ml-2 text-xs font-normal text-muted-foreground">{prediction.hand} hand</span></span>
+                  <span className="text-xs tabular-nums text-muted-foreground">{Math.round(prediction.confidence * 100)}%</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">{status === "watching" || status === "capturing" ? "No supported handshape above the confidence threshold yet." : "Start the camera to see live predictions."}</p>
+          )}
         </div>
         {status === "watching" || status === "capturing" ? (
           <div className="mt-3 flex flex-wrap gap-2">
@@ -328,7 +370,7 @@ export function SignCamera({ context, captureMs, enabled, onCapture, onStatus }:
         ) : null}
         {status === "idle" || status === "denied" || status === "error" ? <Button className="mt-3" variant="outline" onClick={useDemoCapture}><Play aria-hidden="true" />Use typed demo capture</Button> : null}
         {message && (status === "watching" || status === "capturing") ? <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground">{message}</p> : null}
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">This feature tracks hand movement only. It does not recognize or translate signs yet.</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">The starter model classifies seven general handshapes. It does not classify ASL words yet.</p>
       </div>
     </section>
   );

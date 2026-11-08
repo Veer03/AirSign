@@ -117,9 +117,11 @@ src/
 
 ```
 Camera (browser)
-  → MediaPipe HandLandmarker (on-device)
+  → MediaPipe GestureRecognizer (on-device; hand landmarks + general handshape classes)
   → normalize landmarks (wrist origin, scale, mirror)
-  → capture buffer (~2–4 s) + coarse candidates
+  → capture buffer (~2–4 s) + landmark summary
+  → ASL vocabulary classifier (next; temporal, signer-tested model)
+  → coarse ASL word candidates
   → SignCapture
   → POST /api/gist (context + candidates + compact summary)
   → Gemini → { gist, uncertain, confidence, alternatives, note }
@@ -139,21 +141,16 @@ Hearing person speaks
 
 `src/lib/contracts.ts` is the shared language. Any change is announced before merging.
 
-`src/lib/ports.ts` is the swap point:
+`src/lib/ports.ts` is the swap point. Current state:
 
 ```ts
-// Real modules (P1/P2)
+// Current
 export { SignCamera } from '@/components/engine/sign-camera';
-export { useSpeak } from '@/voice/use-speak';
-export { useCaptions } from '@/voice/use-captions';
-
-// Or typed mocks (current)
-export { SignCamera } from '@/components/mocks/sign-camera';
 export { useSpeak } from '@/components/mocks/use-speak';
 export { useCaptions } from '@/components/mocks/use-captions';
 ```
 
-P3 builds the shell against mocks. When P1/P2 ship the real module, flip one import. No page rewrite.
+The live camera uses MediaPipe locally and currently classifies its built-in general handshape set. It does not produce ASL word candidates yet. Speech and captions remain typed mocks.
 
 ## 8. State management
 
@@ -191,7 +188,7 @@ All storage is local to the browser. No server database.
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `NEXT_PUBLIC_USE_MOCKS` | `1` | Force mocks for UI work |
+| `NEXT_PUBLIC_USE_MOCKS` | `1` | Use curated demo gist responses for typed demo captures |
 | `NEXT_PUBLIC_ENABLE_LANDING_3D` | `1` | Toggle heavy landing motion |
 | `NEXT_PUBLIC_ENABLE_GIST` | `1` | Gemini gist |
 | `NEXT_PUBLIC_ENABLE_STILL_FRAME` | `0` | Opt-in single still frame to Gemini (not MVP) |

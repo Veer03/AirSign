@@ -15,13 +15,13 @@ export function fallbackGist(capture: SignCapture): GistResponse {
     const handDataWasCaptured = Boolean(capture.summary?.length);
     return {
       gist: handDataWasCaptured
-        ? "I can track the hand movement, but sign recognition is not connected yet."
+        ? "I can track handshapes, but the ASL word classifier is not connected yet."
         : "I'm not sure I caught that. Could you try again?",
       uncertain: true,
       confidence: handDataWasCaptured ? 0.1 : 0.2,
       alternatives: [],
       note: handDataWasCaptured
-        ? "This capture contains hand landmarks only. Type the message or use a verified sign classifier."
+        ? "This capture contains hand landmarks only. Type the message or connect a classifier trained on ASL words."
         : "No hand movement was captured. Try again or type instead.",
     };
   }

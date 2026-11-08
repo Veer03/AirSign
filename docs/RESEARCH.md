@@ -192,3 +192,14 @@ Skiper UI's documented prerequisites: Next.js, Tailwind, React, Motion (`framer-
 **Status:** open
 **Findings:**
 **Links:**
+
+## R16 — Live classifier and ASL vocabulary model (P1 + P2)
+
+- Identify what the installed MediaPipe classifier actually predicts.
+- Choose an ASL dataset or signer-recorded vocabulary with a clear license.
+- Keep a signer-independent validation split and show `unknown` when confidence is low.
+- Decide how the classifier output becomes text before connecting Gemini and speech.
+
+**Status:** starter classifier implemented; ASL word model open
+**Findings:** MediaPipe's bundled GestureRecognizer has seven canned general handshape classes. The app now surfaces these as live predictions; it does not map them to ASL words. WLASL is a word-level ASL benchmark with 21,083 videos across 2,000 glosses and 119 signers; its paper evaluates appearance-based and pose-based temporal models. How2Sign provides over 80 hours of continuous ASL with aligned modalities, but the dataset is research-only, non-commercial, and very large. For the next classifier, select a small signer-reviewed ASL vocabulary and train/evaluate on multiple signers; do not use generic handshape classes as vocabulary labels.
+**Links:** https://ai.google.dev/edge/api/mediapipe/python/mp/tasks/vision/GestureRecognizerOptions · https://github.com/dxli94/WLASL · https://openaccess.thecvf.com/content_WACV_2020/papers/Li_Word-level_Deep_Sign_Language_Recognition_from_Video_A_New_Large-scale_Dataset_and_Methods_Comparison_WACV_2020_paper.pdf · https://how2sign.github.io/

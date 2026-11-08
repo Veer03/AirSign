@@ -110,9 +110,9 @@ export function GistConfirm({
         <div className="mt-4 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-2)]/40 p-5">
           <p className="text-sm font-semibold">No gist yet.</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Camera tracking is ready. Sign recognition is not connected yet, so
-            live hand movement will not produce a verified gist. Use typed demo
-            capture to preview the confirmation flow.
+            Live tracking includes a starter classifier for general handshapes.
+            The ASL word classifier is the next milestone. Use typed demo capture
+            to preview gist confirmation.
           </p>
         </div>
       ) : (
