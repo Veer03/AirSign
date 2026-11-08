@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { Camera, CameraOff, RotateCcw, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Camera, CameraOff, Hand, RotateCcw, ShieldCheck } from "lucide-react";
 import type { GestureEvent, HandCandidate } from "@/lib/contracts";
 import { makeSignEvent } from "@/lib/starter-phrases";
 import { useGestures, type SignLock } from "@/engine/useGestures";
+import { SIGN_KEY, useAslWords } from "@/engine/useAslWords";
+import { glossToText, type WordGuess } from "@/engine/asl-classifier";
+import { saveDelegate, savedDelegate, type Delegate } from "@/engine/delegate";
+import { disposeRecognizer } from "@/engine/recognizer";
+import { disposeHolistic } from "@/engine/holistic";
+import { useAlphabet } from "@/engine/useAlphabet"; // [alphabet]
+import { AlphabetOverlay } from "./AlphabetOverlay"; // [alphabet]
 import { cn } from "@/lib/utils";
 import { HoldRing } from "./HoldRing";
 import { PixelPanel } from "./PixelPanel";
@@ -31,6 +38,10 @@ export function CameraPanel(props: CameraPanelProps) {
   );
 }
 
+const MODES = ["starter", "words", "alphabet"] as const; // [alphabet] remove "alphabet" to roll back
+type Mode = (typeof MODES)[number];
+const MODE_LABELS: Record<Mode, string> = { starter: "starter", words: "asl words", alphabet: "alphabet" };
+
 function sideTag(side: HandCandidate["side"]) {
   if (side === "left") return "L";
   if (side === "right") return "R";
@@ -52,6 +63,40 @@ function CameraSurface({
   const stageRef = useRef<HTMLDivElement | null>(null);
   const ringRef = useRef<HTMLDivElement | null>(null);
 
+  // "starter" = MediaPipe handshapes; "words" = Holistic + asl-signs model;
+  // "alphabet" = fingerspelling MLP. Read after mount so SSR and client agree.
+  const [mode, setMode] = useState<Mode>("starter");
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("mode");
+    if (fromUrl && (MODES as readonly string[]).includes(fromUrl)) setMode(fromUrl as Mode);
+  }, []);
+  const switchMode = useCallback((next: Mode) => {
+    setMode(next);
+    const url = new URL(window.location.href);
+    if (next === "starter") url.searchParams.delete("mode");
+    else url.searchParams.set("mode", next);
+    window.history.replaceState(null, "", url);
+  }, []);
+  const words = mode === "words";
+  const alphabet = mode === "alphabet"; // [alphabet]
+
+  // CPU/GPU toggle: saved in localStorage; switching rebuilds the models by
+  // remounting this surface (same path as "Try again").
+  const [delegateChoice, setDelegateChoice] = useState<Delegate | null>(null);
+  useEffect(() => setDelegateChoice(savedDelegate()), []);
+  const switchDelegate = useCallback(
+    (next: Delegate) => {
+      saveDelegate(next);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("delegate"); // the toggle wins over a stale URL override
+      window.history.replaceState(null, "", url);
+      disposeRecognizer();
+      disposeHolistic();
+      onRetry();
+    },
+    [onRetry],
+  );
+
   const handleLock = useCallback(
     (lock: SignLock) => {
       onLock(makeSignEvent(lock, lock.confidence, "camera"));
@@ -59,8 +104,45 @@ function CameraSurface({
     [onLock],
   );
 
-  const runtime = useGestures({
-    enabled,
+  const handleWord = useCallback(
+    (guess: WordGuess) => {
+      onLock({
+        id: `asl-${guess.gloss}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        gesture: "Unknown",
+        label: `ASL · ${guess.gloss}`,
+        phrase: glossToText(guess.gloss),
+        confidence: guess.probability,
+        at: Date.now(),
+        source: "camera",
+        hands: 1,
+      });
+    },
+    [onLock],
+  );
+
+  const asl = useAslWords({ enabled: enabled && words, videoRef, canvasRef, onWord: handleWord });
+
+  // [alphabet] start
+  const handleSpelledWord = useCallback(
+    (word: string) => {
+      onLock({
+        id: `abc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        gesture: "Unknown",
+        label: `Spelled · ${word}`,
+        phrase: word.charAt(0) + word.slice(1).toLowerCase(),
+        confidence: 1,
+        at: Date.now(),
+        source: "camera",
+        hands: 1,
+      });
+    },
+    [onLock],
+  );
+  const abc = useAlphabet({ enabled: enabled && alphabet, videoRef, canvasRef, onWord: handleSpelledWord });
+  // [alphabet] end
+
+  const starterRuntime = useGestures({
+    enabled: enabled && !words && !alphabet,
     dwellMs,
     repeatMs,
     twoHands,
@@ -70,6 +152,11 @@ function CameraSurface({
     stageRef,
     ringRef,
   });
+  const runtime = words
+    ? { ...starterRuntime, ...asl.runtime, hands: [] as HandCandidate[] }
+    : alphabet // [alphabet]
+      ? { ...starterRuntime, ...abc.runtime, hands: [] as HandCandidate[] }
+      : starterRuntime;
 
   const showError = enabled && (runtime.state === "denied" || runtime.state === "error");
   const starting = enabled && runtime.state === "starting";
@@ -104,7 +191,45 @@ function CameraSurface({
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {ready ? <span className="label">{runtime.fps} fps</span> : null}
+          <div className="flex border border-white/25" role="group" aria-label="Recognition mode">
+            {MODES.map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={mode === value}
+                onClick={() => switchMode(value)}
+                className={cn(
+                  "label px-2 py-1 transition",
+                  mode === value ? "bg-white/15 !text-white" : "hover:!text-white",
+                )}
+              >
+                {MODE_LABELS[value]}
+              </button>
+            ))}
+          </div>
+          <div className="flex border border-white/25" role="group" aria-label="Processing">
+            {(["GPU", "CPU"] as const).map((value) => {
+              const active = (delegateChoice ?? runtime.delegate ?? "GPU") === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={active}
+                  title={value === "CPU" ? "Use if tracking is slow or labels look wrong" : "Faster when hardware acceleration works"}
+                  onClick={() => (active ? undefined : switchDelegate(value))}
+                  className={cn("label px-2 py-1 transition", active ? "bg-white/15 !text-white" : "hover:!text-white")}
+                >
+                  {value.toLowerCase()}
+                </button>
+              );
+            })}
+          </div>
+          {ready ? (
+            <span className="label">
+              {runtime.fps} fps
+              {runtime.delegate ? ` · ${runtime.delegate.toLowerCase()}` : ""}
+            </span>
+          ) : null}
           <span className="label hidden items-center gap-1 sm:flex">
             <ShieldCheck className="h-3 w-3" /> on-device
           </span>
@@ -192,7 +317,36 @@ function CameraSurface({
           </div>
         ) : null}
 
-        {enabled && ready ? (
+        {enabled && ready && words ? (
+          <AslOverlay
+            handsVisible={asl.runtime.handsVisible}
+            recording={asl.runtime.recording}
+            message={asl.runtime.message}
+            guesses={asl.runtime.guesses}
+            unsure={asl.runtime.unsure}
+            continuous={asl.runtime.continuous}
+            onToggleContinuous={() => asl.setContinuous(!asl.runtime.continuous)}
+            onBegin={asl.beginSign}
+            onEnd={() => void asl.endSign()}
+            onPick={asl.pickGuess}
+          />
+        ) : null}
+
+        {/* [alphabet] */}
+        {enabled && ready && alphabet ? (
+          <AlphabetOverlay
+            hand={abc.runtime.hand}
+            guesses={abc.runtime.guesses}
+            progress={abc.runtime.progress}
+            spelled={abc.runtime.spelled}
+            message={abc.runtime.message}
+            onBackspace={abc.backspace}
+            onClear={abc.clear}
+            onCommit={abc.commit}
+          />
+        ) : null}
+
+        {enabled && ready && !words && !alphabet ? (
           <>
             <div className="absolute left-4 top-4 z-10">
               <span className="label flex items-center gap-2 bg-black/60 px-2 py-1 !text-[9px] backdrop-blur">
@@ -291,11 +445,134 @@ function CameraSurface({
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/15 px-4 py-2.5">
         <p className="text-xs text-white/50">
-          Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or
-          uploaded.
+          {words
+            ? `Hold ${SIGN_KEY.toUpperCase()} (or the button), sign one ASL word, release. 250-word vocabulary, and it can be wrong.`
+            : alphabet // [alphabet]
+              ? "Fingerspell one letter at a time and hold each until the bar fills. Static letters only; J and Z are weak."
+              : "Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or uploaded."}
         </p>
-        <p className="label !text-[9px]">keys 1–7 = phrases</p>
+        <p className="label !text-[9px]">
+          {words
+            ? `hold ${SIGN_KEY} = sign`
+            : alphabet // [alphabet]
+              ? "enter = add · ⌫ = delete · esc = clear"
+              : "keys 1–7 = phrases"}
+        </p>
       </div>
     </PixelPanel>
+  );
+}
+
+function AslOverlay({
+  handsVisible,
+  recording,
+  message,
+  guesses,
+  unsure,
+  continuous,
+  onToggleContinuous,
+  onBegin,
+  onEnd,
+  onPick,
+}: {
+  handsVisible: number;
+  recording: boolean;
+  message: string;
+  guesses: WordGuess[] | null;
+  unsure: boolean;
+  continuous: boolean;
+  onToggleContinuous: () => void;
+  onBegin: () => void;
+  onEnd: () => void;
+  onPick: (guess: WordGuess) => void;
+}) {
+  return (
+    <>
+      <div className="absolute left-4 top-4 z-10">
+        <span className="label flex items-center gap-2 bg-black/60 px-2 py-1 !text-[9px] backdrop-blur">
+          <span
+            className={cn("h-1.5 w-1.5 rounded-full", handsVisible > 0 ? "bg-emerald-400" : "bg-white/40")}
+          />
+          {handsVisible === 0
+            ? "searching for hands"
+            : `${handsVisible} hand${handsVisible > 1 ? "s" : ""} detected`}
+        </span>
+      </div>
+
+      <div className="absolute right-4 top-4 z-10 w-[13rem] space-y-1.5 border border-white/30 bg-black/70 px-3 py-2 backdrop-blur">
+        <p className="label !text-[8px]">
+          {unsure ? "not sure — pick one" : continuous ? "continuous · live top 3" : "asl word · top 3"}
+        </p>
+        {guesses
+          ? guesses.map((guess, index) => (
+              <button
+                key={guess.gloss}
+                type="button"
+                disabled={!unsure}
+                onClick={() => onPick(guess)}
+                className={cn(
+                  "block w-full text-left",
+                  unsure && "border border-amber-400/50 px-1.5 py-1 hover:border-amber-300",
+                )}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className={cn("text-xs", index === 0 ? "font-medium text-white" : "text-white/60")}>
+                    {guess.gloss}
+                  </span>
+                  <span className="label !text-[8px]">{Math.round(guess.probability * 100)}%</span>
+                </span>
+                <span className="mt-1 block h-1 w-full bg-white/15">
+                  <span
+                    className={cn("block h-full", unsure ? "bg-amber-400" : "bg-accent")}
+                    style={{ width: `${Math.round(guess.probability * 100)}%` }}
+                  />
+                </span>
+              </button>
+            ))
+          : null}
+        <p className="text-[10px] leading-snug text-white/50">{message}</p>
+      </div>
+
+      <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2">
+        {continuous ? null : (
+          <button
+            type="button"
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              onBegin();
+            }}
+            onPointerUp={onEnd}
+            onPointerCancel={onEnd}
+            className={cn(
+              "inline-flex select-none items-center gap-2 whitespace-nowrap px-5 py-2.5 text-sm font-medium transition",
+              recording
+                ? "bg-accent text-black"
+                : "border border-white/50 bg-black/60 text-white hover:border-white",
+            )}
+          >
+            <Hand className="h-4 w-4" />
+            {recording ? "Signing… release" : `Hold to sign (${SIGN_KEY.toUpperCase()})`}
+          </button>
+        )}
+        <button
+          type="button"
+          aria-pressed={continuous}
+          onClick={onToggleContinuous}
+          className={cn(
+            "inline-flex items-center gap-2 whitespace-nowrap px-4 py-2.5 text-sm font-medium transition",
+            continuous
+              ? "bg-accent text-black"
+              : "border border-white/50 bg-black/60 text-white hover:border-white",
+          )}
+        >
+          <span className={cn("h-2 w-2 rounded-full", continuous ? "bg-black pulse-dot" : "bg-white/50")} />
+          {continuous ? "Continuous on — stop" : "Continuous"}
+        </button>
+      </div>
+
+      <p className="label pointer-events-none absolute bottom-4 right-4 z-10 hidden bg-black/50 px-2 py-1 !text-[8px] backdrop-blur sm:block">
+        asl-signs model · 250 words · may be wrong
+      </p>
+    </>
   );
 }

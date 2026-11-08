@@ -12,7 +12,7 @@ import {
 import { phraseForGesture } from "@/lib/starter-phrases";
 import { clamp, lerp } from "@/lib/utils";
 import { describeCameraError, startCamera } from "./camera";
-import { detect, getRecognizer, resetRecognizer } from "./recognizer";
+import { detect, getRecognizer, recognizerDelegate, resetRecognizer } from "./recognizer";
 import { isGestureId, SignStabilizer } from "./stabilize";
 import { HandTracker, type TrackedHand } from "./hand-tracker";
 import { LandmarkBuffer } from "./landmark-buffer";
@@ -57,6 +57,8 @@ export type GestureRuntime = {
   /** Milliseconds left before the same held signal may repeat. */
   repeatWaitMs: number;
   fps: number;
+  /** MediaPipe delegate in use, shown next to fps. */
+  delegate?: "GPU" | "CPU" | null;
 };
 
 const CONNECTED = HAND_CONNECTIONS;
@@ -308,7 +310,7 @@ export function useGestures(options: UseGesturesOptions) {
       }
 
       if (cancelled) return;
-      publish({ state: "ready", message: "Show your hand to the camera" });
+      publish({ state: "ready", message: "Show your hand to the camera", delegate: recognizerDelegate() });
       trackerRef.current.reset();
       bufferRef.current.clear();
       signStabilizerRef.current.reset();

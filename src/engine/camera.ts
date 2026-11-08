@@ -49,6 +49,7 @@ export function describeCameraError(error: unknown): CameraError {
 export async function startCamera(
   video: HTMLVideoElement,
   isCancelled: () => boolean = () => false,
+  size: { width: number; height: number } = { width: 1280, height: 720 },
 ): Promise<CameraHandle> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new DOMException(
@@ -61,8 +62,8 @@ export async function startCamera(
     audio: false,
     video: {
       facingMode: "user",
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
+      width: { ideal: size.width },
+      height: { ideal: size.height },
       frameRate: { ideal: 30, max: 60 },
     },
   });

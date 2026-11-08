@@ -3,6 +3,7 @@
 import { FilesetResolver, GestureRecognizer } from "@mediapipe/tasks-vision";
 import type { HandSide } from "@/lib/contracts";
 import type { Landmark } from "./landmarks";
+import { preferredDelegates, quietMediaPipeLogs, type Delegate } from "./delegate";
 
 /** One hand as returned by MediaPipe for a single frame. */
 export type RawHand = {
@@ -47,12 +48,29 @@ async function createRecognizer(): Promise<GestureRecognizer> {
     minTrackingConfidence: 0.5,
   });
 
-  try {
-    return await GestureRecognizer.createFromOptions(fileset, baseOptions("GPU"));
-  } catch {
-    // Older GPUs / some Linux drivers fail on the GPU delegate.
-    return await GestureRecognizer.createFromOptions(fileset, baseOptions("CPU"));
+  quietMediaPipeLogs();
+  // GPU first unless ?delegate=cpu; older GPUs / some drivers fail on GPU.
+  const delegates = preferredDelegates();
+  let lastError: unknown;
+  for (const delegate of delegates) {
+    try {
+      const recognizer = await GestureRecognizer.createFromOptions(fileset, baseOptions(delegate));
+      activeDelegate = delegate;
+      console.info("[gestures] delegate:", delegate);
+      return recognizer;
+    } catch (error) {
+      lastError = error;
+      console.warn(`[gestures] ${delegate} delegate failed`, error);
+    }
   }
+  throw lastError;
+}
+
+let activeDelegate: Delegate | null = null;
+
+/** Delegate the current recognizer was created with (null until loaded). */
+export function recognizerDelegate(): Delegate | null {
+  return activeDelegate;
 }
 
 export function getRecognizer(): Promise<GestureRecognizer> {
@@ -68,6 +86,14 @@ export function getRecognizer(): Promise<GestureRecognizer> {
 export function resetRecognizer() {
   recognizerPromise = null;
   lastTimestamp = 0;
+}
+
+/** Close the current recognizer so the next getRecognizer() rebuilds it (e.g. new delegate). */
+export function disposeRecognizer() {
+  const pending = recognizerPromise;
+  resetRecognizer();
+  activeDelegate = null;
+  void pending?.then((recognizer) => recognizer.close()).catch(() => {});
 }
 
 /**
