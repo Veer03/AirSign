@@ -3,7 +3,36 @@ import type { Landmark } from "./landmarks";
 
 export type TrackedHand = RawHand & { id: string };
 
-type Track = { id: string; cx: number; cy: number; lastSeen: number };
+type Track = {
+  id: string;
+  cx: number;
+  cy: number;
+  lastSeen: number;
+  landmarks: Landmark[] | null;
+};
+
+function smoothLandmarks(
+  previous: Landmark[] | null,
+  current: Landmark[] | null,
+): Landmark[] | null {
+  if (!current || current.length === 0) return current;
+  if (!previous || previous.length !== current.length) return current;
+
+  const wrist = current[0];
+  const previousWrist = previous[0];
+  const wristMotion = Math.hypot(wrist.x - previousWrist.x, wrist.y - previousWrist.y);
+  // Smooth small tracking jitter while following quick hand movement closely.
+  const response = wristMotion > 0.025 ? 0.88 : 0.68;
+
+  return current.map((point, index) => {
+    const before = previous[index];
+    return {
+      x: before.x + (point.x - before.x) * response,
+      y: before.y + (point.y - before.y) * response,
+      z: before.z + (point.z - before.z) * response,
+    };
+  });
+}
 
 function centroid(landmarks: Landmark[] | null): { x: number; y: number } {
   if (!landmarks || landmarks.length === 0) return { x: 0.5, y: 0.5 };
@@ -57,16 +86,24 @@ export class HandTracker {
       }
 
       if (!best) {
-        best = { id: `h${this.nextId++}`, cx: centre.x, cy: centre.y, lastSeen: now };
+        best = {
+          id: `h${this.nextId++}`,
+          cx: centre.x,
+          cy: centre.y,
+          lastSeen: now,
+          landmarks: hand.landmarks,
+        };
         this.tracks.push(best);
       }
 
+      const smoothedLandmarks = smoothLandmarks(best.landmarks, hand.landmarks);
       best.cx = centre.x;
       best.cy = centre.y;
       best.lastSeen = now;
+      best.landmarks = smoothedLandmarks;
       used.add(best.id);
 
-      tracked.push({ ...hand, id: best.id });
+      tracked.push({ ...hand, landmarks: smoothedLandmarks, id: best.id });
     }
 
     return tracked;

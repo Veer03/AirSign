@@ -15,12 +15,19 @@ import { SentenceStrip } from "@/components/SentenceStrip";
 import { SettingsBar } from "@/components/SettingsBar";
 import { ReplyCaptions } from "@/components/ReplyCaptions";
 import { RepeatWaitPanel } from "@/components/RepeatWaitPanel";
+import { ASLAlphabetPractice } from "@/components/ASLAlphabetPractice";
+import { ASLNumberPractice } from "@/components/ASLNumberPractice";
 
 export default function WorkspacePage() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [alphabetMode, setAlphabetMode] = useState(false);
+  const [numberMode, setNumberMode] = useState(false);
+  const [alphabetPracticeOpen, setAlphabetPracticeOpen] = useState(false);
+  const [practiceLetter, setPracticeLetter] = useState<string | null>(null);
+  const [numberPracticeOpen, setNumberPracticeOpen] = useState(false);
+  const [practiceNumber, setPracticeNumber] = useState<string | null>(null);
   const [chips, setChips] = useState<GestureEvent[]>([]);
   const [last, setLast] = useState<GestureEvent | null>(null);
   const [voiceConfigured, setVoiceConfigured] = useState<boolean | null>(null);
@@ -116,7 +123,11 @@ export default function WorkspacePage() {
   }, [chips, speak]);
 
   return (
-    <div data-reduced={settings.reducedMotion ? "true" : "false"} className="relative min-h-screen">
+    <div
+      data-reduced={settings.reducedMotion ? "true" : "false"}
+      data-camera-active={cameraOn ? "true" : "false"}
+      className="relative min-h-screen"
+    >
       <PixelBackdrop />
 
       <header className="sticky top-0 z-30 border-b border-white/70 bg-black/90 backdrop-blur">
@@ -137,12 +148,19 @@ export default function WorkspacePage() {
 
           <div className="flex items-center gap-3">
             <span className="label hidden md:block">
-              {alphabetMode ? "ASL alphabet + Wow sign" : "starter gestures · not sign language"}
+              {alphabetMode
+                ? "ASL alphabet + Wow sign"
+                : numberMode
+                  ? "ASL numbers 1–10"
+                  : "starter gestures · not sign language"}
             </span>
             <button
               type="button"
               aria-pressed={alphabetMode}
-              onClick={() => setAlphabetMode((value) => !value)}
+              onClick={() => {
+                setAlphabetMode((value) => !value);
+                setNumberMode(false);
+              }}
               className={
                 alphabetMode
                   ? "border border-accent bg-accent/15 px-3 py-2 text-xs uppercase tracking-[0.12em] text-accent"
@@ -150,6 +168,21 @@ export default function WorkspacePage() {
               }
             >
               ASL A–Z {alphabetMode ? "on" : "off"}
+            </button>
+            <button
+              type="button"
+              aria-pressed={numberMode}
+              onClick={() => {
+                setNumberMode((value) => !value);
+                setAlphabetMode(false);
+              }}
+              className={
+                numberMode
+                  ? "border border-accent bg-accent/15 px-3 py-2 text-xs uppercase tracking-[0.12em] text-accent"
+                  : "border border-white/25 px-3 py-2 text-xs uppercase tracking-[0.12em] text-white/65 transition hover:border-white/50 hover:text-white"
+              }
+            >
+              ASL 1–10 {numberMode ? "on" : "off"}
             </button>
             <button
               type="button"
@@ -173,13 +206,15 @@ export default function WorkspacePage() {
               <p className="mt-1 max-w-2xl text-sm text-white/50">
                 {alphabetMode
                   ? "Hold a static ASL letter pose or the Wow pose until the ring fills. The result is added and spoken if speak-on-lock is on."
-                  : "Hold a starter pose — one hand, or a matching pair — until the ring fills. Speak-on-lock is "}
-                {!alphabetMode ? (
+                  : numberMode
+                    ? "Hold a static ASL number handshape until the ring fills. The result is added and spoken if speak-on-lock is on."
+                    : "Hold a starter pose — one hand, or a matching pair — until the ring fills. Speak-on-lock is "}
+                {!alphabetMode && !numberMode ? (
                   <span className={settings.autoSpeak ? "text-accent" : "text-white/80"}>
                     {settings.autoSpeak ? "on" : "off"}
                   </span>
                 ) : null}
-                {alphabetMode
+                {alphabetMode || numberMode
                   ? " The video never leaves this device."
                   : ". The video never leaves this device."}
               </p>
@@ -197,6 +232,10 @@ export default function WorkspacePage() {
             twoHands={settings.twoHands}
             alphabetMode={alphabetMode}
             onAlphabetModeChange={setAlphabetMode}
+            numberMode={numberMode}
+            onNumberModeChange={setNumberMode}
+            practiceLetter={practiceLetter}
+            practiceNumber={practiceNumber}
             onEnable={() => setCameraOn(true)}
             onDisable={() => setCameraOn(false)}
             onLock={handleLock}
@@ -240,6 +279,31 @@ export default function WorkspacePage() {
         </section>
 
         <aside className="space-y-5 lg:col-span-4">
+          <ASLAlphabetPractice
+            open={alphabetPracticeOpen}
+            onOpenChange={setAlphabetPracticeOpen}
+            target={practiceLetter}
+            onTargetChange={(letter) => {
+              setPracticeLetter(letter);
+              if (letter) {
+                setAlphabetMode(true);
+                setNumberMode(false);
+              }
+            }}
+          />
+          <ASLNumberPractice
+            open={numberPracticeOpen}
+            onOpenChange={setNumberPracticeOpen}
+            target={practiceNumber}
+            onTargetChange={(number) => {
+              setPracticeNumber(number);
+              if (number) {
+                setNumberMode(true);
+                setAlphabetMode(false);
+              }
+            }}
+          />
+
           <PixelPanel className="p-5">
             <div className="flex items-center justify-between">
               <span className="label">last locked phrase</span>

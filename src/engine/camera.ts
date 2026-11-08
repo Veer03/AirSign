@@ -61,7 +61,9 @@ export function describeCameraError(error: unknown): CameraError {
 export async function startCamera(
   video: HTMLVideoElement,
   isCancelled: () => boolean = () => false,
-  size: { width: number; height: number } = { width: 1280, height: 720 },
+  // Hand tracking does not need a 720p stream; 640×480 cuts per-frame work
+  // while keeping hands detailed enough for landmark recognition.
+  size: { width: number; height: number } = { width: 640, height: 480 },
 ): Promise<CameraHandle> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new DOMException(
@@ -76,7 +78,7 @@ export async function startCamera(
       facingMode: "user",
       width: { ideal: size.width },
       height: { ideal: size.height },
-      frameRate: { ideal: 30, max: 60 },
+      frameRate: { ideal: 30, max: 30 },
     },
   });
 

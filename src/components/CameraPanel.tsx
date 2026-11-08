@@ -23,6 +23,11 @@ type CameraPanelProps = {
   /** Harshpal's kNN fingerspelling mode (owned by the page). */
   alphabetMode: boolean;
   onAlphabetModeChange?: (on: boolean) => void;
+  /** Harshpal's ASL 1–10 mode (owned by the page). */
+  numberMode: boolean;
+  onNumberModeChange?: (on: boolean) => void;
+  practiceLetter?: string | null;
+  practiceNumber?: string | null;
   onEnable: () => void;
   onDisable?: () => void;
   onLock: (event: GestureEvent) => void;
@@ -39,13 +44,14 @@ export function CameraPanel(props: CameraPanelProps) {
   );
 }
 
-const MODES = ["starter", "words", "alphabet", "alphabet-pretrained"] as const;
+const MODES = ["starter", "words", "alphabet", "alphabet-pretrained", "numbers"] as const;
 type Mode = (typeof MODES)[number];
 const MODE_LABELS: Record<Mode, string> = {
   starter: "starter",
   words: "asl words",
   alphabet: "alphabet",
   "alphabet-pretrained": "alphabet · pretrained",
+  numbers: "numbers",
 };
 
 function sideTag(side: HandCandidate["side"]) {
@@ -61,6 +67,10 @@ function CameraSurface({
   twoHands,
   alphabetMode,
   onAlphabetModeChange,
+  numberMode,
+  onNumberModeChange,
+  practiceLetter,
+  practiceNumber,
   onEnable,
   onDisable,
   onLock,
@@ -79,33 +89,36 @@ function CameraSurface({
   // Which letter classifier the alphabet tabs use: Harshpal's kNN or the
   // pretrained MLP. The page's "ASL A–Z" button keeps whichever was last used.
   const [alphabetModel, setAlphabetModel] = useState<AlphabetModel>("knn");
-  const mode: Mode = alphabetMode
-    ? alphabetModel === "pretrained"
-      ? "alphabet-pretrained"
-      : "alphabet"
-    : baseMode;
-  useEffect(() => {
-    const fromUrl = new URLSearchParams(window.location.search).get("mode");
-    if (fromUrl === "words") setBaseMode("words");
-    if (fromUrl === "alphabet" || fromUrl === "alphabet-pretrained") {
-      setAlphabetModel(fromUrl === "alphabet-pretrained" ? "pretrained" : "knn");
-      onAlphabetModeChange?.(true);
-    }
-    // Mount only: the URL seeds the initial mode.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const mode: Mode = numberMode
+    ? "numbers"
+    : alphabetMode
+      ? alphabetModel === "pretrained"
+        ? "alphabet-pretrained"
+        : "alphabet"
+      : baseMode;
   const switchMode = useCallback(
     (next: Mode) => {
       if (next === "alphabet" || next === "alphabet-pretrained") {
         setAlphabetModel(next === "alphabet-pretrained" ? "pretrained" : "knn");
+        onNumberModeChange?.(false);
         onAlphabetModeChange?.(true);
+      } else if (next === "numbers") {
+        onAlphabetModeChange?.(false);
+        onNumberModeChange?.(true);
       } else {
         onAlphabetModeChange?.(false);
+        onNumberModeChange?.(false);
         setBaseMode(next);
       }
     },
-    [onAlphabetModeChange],
+    [onAlphabetModeChange, onNumberModeChange],
   );
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("mode");
+    if (fromUrl && (MODES as readonly string[]).includes(fromUrl)) switchMode(fromUrl as Mode);
+    // Mount only: the URL seeds the initial mode.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Keep ?mode= in sync, including when the page's "ASL A–Z" button flips it.
   // Skip the first run so it can't erase the URL before the mount read applies.
   const firstUrlSync = useRef(true);
@@ -173,6 +186,7 @@ function CameraSurface({
     twoHands,
     alphabetMode,
     alphabetModel,
+    numberMode,
     onLock: handleLock,
     videoRef,
     canvasRef,
@@ -306,7 +320,9 @@ function CameraSurface({
                   ? knnAlphabet
                     ? "Show one static ASL letter or the Wow pose, or press its A–Z key."
                     : "Show one static ASL letter, or press its A–Z key."
-                  : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
+                  : numberMode
+                    ? "Show one ASL number handshape from 1 to 10."
+                    : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
                 The video stays in this browser — only text is sent to the server.
               </p>
               <button
@@ -317,7 +333,7 @@ function CameraSurface({
                 <Camera className="h-4 w-4" /> Enable camera
               </button>
               <p className="label mt-4 !text-[9px]">
-                {alphabetMode ? "A–Z keys also work" : "or press keys 1–9"}
+                {alphabetMode ? "A–Z keys also work" : numberMode ? "Hold the pose to speak the number" : "or press keys 1–9"}
               </p>
             </div>
           </div>
@@ -373,14 +389,16 @@ function CameraSurface({
                     handCount > 0 ? "bg-emerald-400" : "bg-white/40",
                   )}
                 />
-                {alphabetMode
+                {alphabetMode || numberMode
                   ? sign?.phrase === "Wow!"
                     ? handCount === 2
                       ? "two Wow hands"
                       : "Wow sign"
                     : handCount === 0
                     ? "show one hand"
-                    : "ASL alphabet hand"
+                    : numberMode
+                      ? "ASL number hand"
+                      : "ASL alphabet hand"
                   : handCount === 0
                     ? "searching for hands"
                     : handCount === 1
@@ -454,6 +472,32 @@ function CameraSurface({
               </div>
             ) : null}
 
+            {alphabetMode && practiceLetter ? (
+              <div className="absolute bottom-4 left-4 z-10 border border-white/25 bg-black/75 px-3 py-2 backdrop-blur">
+                <p className="label !text-[8px]">practice letter {practiceLetter}</p>
+                <p className={cn("mt-1 text-sm font-medium", sign?.label === practiceLetter ? "text-emerald-300" : "text-white")}>
+                  {sign?.label === practiceLetter
+                    ? "That’s it! Hold to lock it."
+                    : sign?.label
+                      ? `Camera sees ${sign.label} — try ${practiceLetter}`
+                      : `Make ${practiceLetter} from the chart`}
+                </p>
+              </div>
+            ) : null}
+
+            {numberMode && practiceNumber ? (
+              <div className="absolute bottom-4 left-4 z-10 border border-white/25 bg-black/75 px-3 py-2 backdrop-blur">
+                <p className="label !text-[8px]">practice number {practiceNumber}</p>
+                <p className={cn("mt-1 text-sm font-medium", sign?.label === practiceNumber ? "text-emerald-300" : "text-white")}>
+                  {sign?.label === practiceNumber
+                    ? "That’s it! Hold to lock it."
+                    : sign?.label
+                      ? `Camera sees ${sign.label} — try ${practiceNumber}`
+                      : `Make ${practiceNumber} from the chart`}
+                </p>
+              </div>
+            ) : null}
+
             <HoldRing
               ringRef={ringRef}
               dwellMs={runtime.combo ? Math.max(dwellMs, 500) : dwellMs}
@@ -466,7 +510,9 @@ function CameraSurface({
                 ? alphabetModel === "pretrained"
                   ? "ASL fingerspelling · pretrained MLP (CC BY-NC)"
                   : "ASL fingerspelling + Wow pose · dataset kNN"
-                : "starter gestures · not sign language"}
+                : numberMode
+                  ? "ASL numbers · 1–10"
+                  : "starter gestures · not sign language"}
             </p>
           </>
         ) : null}
@@ -478,7 +524,9 @@ function CameraSurface({
             ? `Hold ${SIGN_KEY.toUpperCase()} (or the button), sign one ASL word, release. 250-word vocabulary, and it can be wrong.`
             : alphabetMode
               ? "Hold one static ASL letter pose until the ring fills. Nothing is stored or uploaded."
-              : "Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or uploaded."}
+              : numberMode
+                ? "Hold one static ASL number pose until the ring fills. Nothing is stored or uploaded."
+                : "Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or uploaded."}
         </p>
         <p className="label !text-[9px]">
           {words
@@ -487,7 +535,9 @@ function CameraSurface({
               ? "ASL alphabet · static A–Z poses + Wow · keys A–Z"
               : alphabetMode
                 ? "ASL alphabet · static A–Z poses · keys A–Z"
-                : "keys 1–9 = phrases"}
+                : numberMode
+                  ? "ASL numbers · static 1–10 handshapes"
+                  : "keys 1–9 = phrases"}
         </p>
       </div>
     </PixelPanel>
