@@ -2,8 +2,12 @@
 
 import { useEffect, useRef } from "react";
 
+const RADIUS = 520;
+
 /**
- * A soft warm glow that follows the pointer. Purely decorative, CSS-only paint.
+ * A soft warm glow that follows the pointer. Purely decorative.
+ * The glow is a fixed-size circle moved with a GPU transform, so following
+ * the pointer never repaints the page (the old full-screen gradient did).
  * Disabled for reduced-motion users.
  */
 export function CursorGlow() {
@@ -15,12 +19,16 @@ export function CursorGlow() {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     let frame = 0;
+    let x = 0;
+    let y = 0;
 
     const move = (event: PointerEvent) => {
-      cancelAnimationFrame(frame);
+      x = event.clientX;
+      y = event.clientY;
+      if (frame) return;
       frame = requestAnimationFrame(() => {
-        element.style.setProperty("--mx", `${event.clientX}px`);
-        element.style.setProperty("--my", `${event.clientY}px`);
+        frame = 0;
+        element.style.transform = `translate3d(${x - RADIUS}px, ${y - RADIUS}px, 0)`;
         element.style.opacity = "1";
       });
     };
@@ -30,24 +38,26 @@ export function CursorGlow() {
     };
 
     window.addEventListener("pointermove", move, { passive: true });
-    window.addEventListener("pointerleave", leave);
+    document.documentElement.addEventListener("pointerleave", leave);
 
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerleave", leave);
+      document.documentElement.removeEventListener("pointerleave", leave);
     };
   }, []);
 
   return (
-    <div
-      ref={ref}
-      aria-hidden
-      className="pointer-events-none fixed inset-0 -z-[5] opacity-0 transition-opacity duration-500"
-      style={{
-        background:
-          "radial-gradient(520px circle at var(--mx, 50%) var(--my, 30%), rgba(255,122,0,0.11), transparent 66%)",
-      }}
-    />
+    <div aria-hidden className="pointer-events-none fixed inset-0 -z-[5] overflow-hidden">
+      <div
+        ref={ref}
+        className="absolute left-0 top-0 opacity-0 transition-opacity duration-500 will-change-transform"
+        style={{
+          width: RADIUS * 2,
+          height: RADIUS * 2,
+          background: "radial-gradient(circle closest-side, rgba(255,122,0,0.11), transparent 66%)",
+        }}
+      />
+    </div>
   );
 }

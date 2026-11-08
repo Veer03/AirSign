@@ -18,8 +18,13 @@ export function PixelBackdrop({ dense = false, matte = false }: { dense?: boolea
 
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-black">
-      <div className="pixel-grid grid-drift absolute inset-0 opacity-80" />
-      <div className="backdrop-beam absolute inset-0" />
+      {/* Mask stays put on the wrapper; only the oversized grid moves (GPU transform). */}
+      <div className="pixel-grid-mask absolute inset-0 overflow-hidden opacity-80">
+        <div className="pixel-grid grid-drift absolute -left-16 -top-16 bottom-0 right-0" />
+      </div>
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="backdrop-beam absolute inset-y-0 left-0 w-[220%]" />
+      </div>
 
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_30%,rgba(255,122,0,0.12),transparent_70%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_40%_at_82%_78%,rgba(120,180,255,0.06),transparent_75%)]" />

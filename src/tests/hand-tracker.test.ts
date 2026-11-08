@@ -44,6 +44,37 @@ describe("HandTracker", () => {
     expect(jumped[0].id).not.toBe(first[0].id);
   });
 
+  it("damps jitter on a still hand", () => {
+    const tracker = new HandTracker();
+    let t = 0;
+    tracker.update([hand("Open_Palm", 0.5)], t);
+    // Alternating ±0.004 noise around a fixed point, 30 fps.
+    let maxOffset = 0;
+    for (let frame = 1; frame <= 30; frame += 1) {
+      t += 33;
+      const noisy = 0.5 + (frame % 2 ? 0.004 : -0.004);
+      const [result] = tracker.update([hand("Open_Palm", noisy)], t);
+      maxOffset = Math.max(maxOffset, Math.abs(result.landmarks![0].x - 0.5));
+    }
+    expect(maxOffset).toBeLessThan(0.004 * 0.6);
+  });
+
+  it("follows a fast-moving hand closely", () => {
+    const tracker = new HandTracker();
+    let t = 0;
+    let x = 0.2;
+    tracker.update([hand("Open_Palm", x)], t);
+    let last = 0;
+    // 0.02 per frame at 30 fps: a quick sweep across the frame.
+    for (let frame = 1; frame <= 15; frame += 1) {
+      t += 33;
+      x += 0.02;
+      const [result] = tracker.update([hand("Open_Palm", x)], t);
+      last = result.landmarks![0].x;
+    }
+    expect(x - last).toBeLessThan(0.02);
+  });
+
   it("matches a missing landmark set to the centre rather than dropping the hand", () => {
     const tracker = new HandTracker();
     const result = tracker.update(
