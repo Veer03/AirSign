@@ -18,6 +18,7 @@ export const STARTER_PHRASES: Phrase[] = [
   { id: "closed-fist", gesture: "Closed_Fist", label: "Closed fist", text: "Stop" },
   { id: "pointing-up", gesture: "Pointing_Up", label: "Pointing up", text: "One moment please" },
   { id: "love-you", gesture: "ILoveYou", label: "I love you", text: "Thank you" },
+  { id: "middle-finger", gesture: "Middle_Finger", label: "Middle finger", text: "Fuck you" },
 ];
 
 const byGesture = new Map<GestureId, Phrase>(
@@ -28,7 +29,7 @@ export function phraseForGesture(gesture: GestureId): Phrase | undefined {
   return byGesture.get(gesture);
 }
 
-/** Keyboard fallback: keys 1–7 dispatch the same events as the camera. */
+/** Keyboard fallback: keys 1–8 dispatch the same events as the camera. */
 export function phraseForKey(key: string): Phrase | undefined {
   const index = Number(key) - 1;
   if (!Number.isInteger(index) || index < 0 || index >= STARTER_PHRASES.length) {

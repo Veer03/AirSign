@@ -245,7 +245,7 @@ export default function WorkspacePage() {
 
             <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-3">
               <span className="label">
-                {last ? `${Math.round(last.confidence * 100)}% confidence` : "keys 1–7 work now"}
+                {last ? `${Math.round(last.confidence * 100)}% confidence` : "keys 1–8 work now"}
               </span>
               <span className="label flex items-center gap-1.5">
                 <span

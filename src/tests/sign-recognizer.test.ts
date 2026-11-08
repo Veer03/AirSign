@@ -49,6 +49,13 @@ describe("LocalStubRecognizer", () => {
     expect(result?.side).toBe("right");
   });
 
+  it("locks the middle-finger starter phrase", () => {
+    const result = recognizer.recognize([frame(hand("Middle_Finger", "right"))]);
+    expect(result?.hands).toBe(1);
+    expect(result?.phrase).toBe("Fuck you");
+    expect(result?.side).toBe("right");
+  });
+
   it("ignores low-confidence and unknown labels", () => {
     expect(
       recognizer.recognize([frame(hand("Open_Palm", "left", 0.2), hand("Open_Palm", "right", 0.2))]),

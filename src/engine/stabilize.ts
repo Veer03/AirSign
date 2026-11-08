@@ -22,6 +22,7 @@ const GESTURES = new Set<string>([
   "Closed_Fist",
   "Pointing_Up",
   "ILoveYou",
+  "Middle_Finger",
 ]);
 
 /**

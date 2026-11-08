@@ -301,7 +301,7 @@ export function useGestures(options: UseGesturesOptions) {
           state: "error",
           message: missing
             ? "Hand-tracking assets are missing. Run `npm run setup:assets`, then reload."
-            : "Hand tracking failed to load. Check the console, or use keys 1–7.",
+            : "Hand tracking failed to load. Check the console, or use keys 1–8.",
         });
         resetRecognizer();
         // The stream is already live; stop it so the camera light does not
