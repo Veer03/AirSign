@@ -5,13 +5,16 @@ import { PixelPanel } from "@/components/PixelPanel";
 import { cn } from "@/lib/utils";
 
 /**
- * Discrete stops. The first four are the fine-control range (1–2.5 s), and the
- * rest keep the longer waits available without making the slider imprecise.
+ * Discrete stops: fine control at the short end (0.25–2.5 s), then a few
+ * longer waits up to the 8 s cap.
  */
-const STOPS = [1000, 1500, 2000, 2500, 3000, 4000, 5000, 8000, 10000, 15000] as const;
+export const REPEAT_STOPS = [250, 500, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 8000] as const;
+export const MAX_REPEAT_MS = REPEAT_STOPS[REPEAT_STOPS.length - 1];
+const STOPS = REPEAT_STOPS;
 
+/** 250 → "0.25s", 1500 → "1.5s", 3000 → "3s". */
 function format(ms: number) {
-  return ms % 1000 === 0 ? `${ms / 1000}s` : `${(ms / 1000).toFixed(1)}s`;
+  return `${Number((ms / 1000).toFixed(2))}s`;
 }
 
 function nearestIndex(value: number) {
@@ -44,7 +47,7 @@ export function RepeatWaitPanel({
             passes. Change the gesture or lower your hand to speak a new phrase right away.
           </p>
         </div>
-        <span className="label shrink-0 !text-accent">{format(value)}</span>
+        <span className="label shrink-0 !text-accent">{format(STOPS[index])}</span>
       </div>
 
       <div className="mt-4">
@@ -55,7 +58,7 @@ export function RepeatWaitPanel({
           step={1}
           value={index}
           aria-label="Repeat wait"
-          aria-valuetext={format(value)}
+          aria-valuetext={format(STOPS[index])}
           onChange={(event) => onChange(STOPS[Number(event.target.value)])}
           className="h-6 w-full cursor-pointer accent-[#ff7a00]"
         />
@@ -65,7 +68,7 @@ export function RepeatWaitPanel({
               key={ms}
               className={cn(
                 "text-[8px] tabular-nums transition",
-                value === ms ? "font-medium text-accent" : "text-white/35",
+                STOPS[index] === ms ? "font-medium text-accent" : "text-white/35",
               )}
             >
               {format(ms)}

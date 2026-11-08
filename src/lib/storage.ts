@@ -18,6 +18,11 @@ export async function loadSettings(): Promise<Settings> {
     if (!["warm", "calm", "energetic"].includes(String(settings.voice))) {
       settings.voice = DEFAULT_SETTINGS.voice;
     }
+    // Older versions allowed 10–15 s repeat waits; the slider now caps at 8 s.
+    if (!Number.isFinite(settings.repeatMs) || settings.repeatMs < 0) {
+      settings.repeatMs = DEFAULT_SETTINGS.repeatMs;
+    }
+    settings.repeatMs = Math.min(settings.repeatMs, 8000);
     return settings;
   } catch {
     return DEFAULT_SETTINGS;

@@ -3,18 +3,12 @@
 import Image from "next/image";
 import { PixelPanel } from "./PixelPanel";
 
-const NUMBERS = Array.from({ length: 10 }, (_, index) => String(index + 1));
-
 export function ASLNumberPractice({
   open,
   onOpenChange,
-  target,
-  onTargetChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  target: string | null;
-  onTargetChange: (number: string | null) => void;
 }) {
   return (
     <PixelPanel className="p-4">
@@ -35,7 +29,7 @@ export function ASLNumberPractice({
       {open ? (
         <div className="mt-4 space-y-3">
           <p className="text-xs leading-relaxed text-white/60">
-            Choose a number, copy its handshape, and hold it in front of the camera.
+            Copy a handshape from the chart, then hold it in front of the camera on the numbers tab.
           </p>
           <div className="max-h-[45vh] overflow-y-auto border border-white/15 bg-white p-2">
             <Image
@@ -47,26 +41,6 @@ export function ASLNumberPractice({
               className="h-auto w-full"
             />
           </div>
-          <div className="grid grid-cols-5 gap-1" aria-label="Choose a number to practice">
-            {NUMBERS.map((number) => (
-              <button
-                key={number}
-                type="button"
-                aria-pressed={target === number}
-                onClick={() => onTargetChange(target === number ? null : number)}
-                className={`aspect-square border text-sm font-medium transition ${
-                  target === number
-                    ? "border-accent bg-accent text-black"
-                    : "border-white/20 text-white/75 hover:border-white/60 hover:text-white"
-                }`}
-              >
-                {number}
-              </button>
-            ))}
-          </div>
-          <p aria-live="polite" className="min-h-5 text-xs text-accent">
-            {target ? `Practice ${target} — match the handshape in the chart.` : "Choose a number to practice."}
-          </p>
         </div>
       ) : null}
     </PixelPanel>

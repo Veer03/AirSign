@@ -460,3 +460,27 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 122, 0, 0.6);
 }
+
+/* ---------- mobile ---------- */
+
+/* Horizontal tab strips scroll on phones without showing a scrollbar. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Remove the tap delay and grey flash on touch devices. */
+button,
+a {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 639px) {
+  /* Keep long labels from forcing horizontal page scroll. */
+  body {
+    overflow-x: hidden;
+  }
+}

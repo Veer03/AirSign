@@ -11,7 +11,7 @@ import {
 } from "@/lib/contracts";
 import { phraseForGesture } from "@/lib/starter-phrases";
 import { clamp, lerp } from "@/lib/utils";
-import { describeCameraError, startCamera } from "./camera";
+import { describeCameraError, startCamera, type CameraFacing } from "./camera";
 import { detect, getRecognizer, recognizerDelegate, resetRecognizer } from "./recognizer";
 import { isGestureId, SignStabilizer } from "./stabilize";
 import { HandTracker, type TrackedHand } from "./hand-tracker";
@@ -54,6 +54,8 @@ export type UseGesturesOptions = {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   stageRef: RefObject<HTMLDivElement | null>;
   ringRef: RefObject<HTMLDivElement | null>;
+  /** Front ("user", mirrored preview) or rear ("environment") camera. */
+  facing?: CameraFacing;
 };
 
 export type GestureRuntime = {
@@ -167,6 +169,7 @@ export function useGestures(options: UseGesturesOptions) {
   const { enabled, dwellMs, repeatMs, twoHands, alphabetMode, numberMode, onLock, videoRef, canvasRef, stageRef, ringRef } =
     options;
   const alphabetModel: AlphabetModel = options.alphabetModel ?? "knn";
+  const facing: CameraFacing = options.facing ?? "user";
 
   const [runtime, setRuntime] = useState<GestureRuntime>({
     state: "idle",
@@ -256,8 +259,9 @@ export function useGestures(options: UseGesturesOptions) {
       if (box) {
         const size = Math.max(box.maxX - box.minX, box.maxY - box.minY, 0.02);
         targetZ = clamp(0.62 / size, 1, 2.1);
-        // Preview is mirrored, so mirror the centre we zoom toward.
-        targetX = 1 - (box.minX + box.maxX) / 2;
+        // The front-camera preview is mirrored, so mirror the centre we zoom toward.
+        const centreX = (box.minX + box.maxX) / 2;
+        targetX = facing === "user" ? 1 - centreX : centreX;
         targetY = (box.minY + box.maxY) / 2;
       }
 
@@ -272,7 +276,7 @@ export function useGestures(options: UseGesturesOptions) {
       const ty = clamp(0.5 - zoom.z * zoom.cy, 1 - zoom.z, 0);
       stage.style.transform = `translate3d(${(tx * 100).toFixed(3)}%, ${(ty * 100).toFixed(3)}%, 0) scale(${zoom.z.toFixed(3)})`;
     },
-    [stageRef],
+    [stageRef, facing],
   );
 
   useEffect(() => {
@@ -324,7 +328,7 @@ export function useGestures(options: UseGesturesOptions) {
 
       let handle: Awaited<ReturnType<typeof startCamera>>;
       try {
-        handle = await startCamera(video, () => cancelled);
+        handle = await startCamera(video, () => cancelled, undefined, facing);
       } catch (error) {
         if (cancelled) return;
         const described = describeCameraError(error);
@@ -609,7 +613,8 @@ export function useGestures(options: UseGesturesOptions) {
       if (stageRef.current) stageRef.current.style.transform = "";
       if (ringRef.current) ringRef.current.style.setProperty("--hold", "0");
     };
-  }, [enabled, publish, applyZoom, videoRef, canvasRef, stageRef, ringRef]);
+    // facing: switching front/rear restarts the camera in place.
+  }, [enabled, facing, publish, applyZoom, videoRef, canvasRef, stageRef, ringRef]);
 
   return runtime;
 }

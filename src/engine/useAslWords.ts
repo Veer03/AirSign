@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { GestureState } from "@/lib/contracts";
 import { clamp } from "@/lib/utils";
-import { describeCameraError, startCamera } from "./camera";
+import { describeCameraError, startCamera, type CameraFacing } from "./camera";
 import { detectHolistic, getHolistic, resetHolistic } from "./holistic";
 import { frameHasHand, frameTo543, type FrameOptions, type Point3 } from "./holistic-frame";
 import { getAslClassifier, type WordGuess } from "./asl-classifier";
@@ -12,16 +12,12 @@ import { HAND_CONNECTIONS } from "./landmarks";
 /**
  * "ASL words" mode: MediaPipe Holistic + the Kaggle asl-signs classifier.
  *
- * Push-to-sign: hold W (or the button), sign one word, release. Classified once.
- * Continuous: a sliding window of the last ~1.5 s is classified every ~0.4 s
- * while hands are visible. A word is added when it is confident AND the same
+ * Always recording: a sliding window of the last ~1.5 s is classified every
+ * ~0.4 s while hands are visible. A word is added when it is confident AND the same
  * top-1 shows up in two inferences in a row; then the window is cleared.
  */
 
-export const SIGN_KEY = "w";
-/** Push-to-sign: top-1 needed to lock without asking the user. */
-export const WORD_THRESHOLD = 0.4;
-/** Continuous: stricter, because it runs unprompted. */
+/** Top-1 probability needed (twice in a row) before a word is added. */
 export const CONTINUOUS_THRESHOLD = 0.55;
 const MIN_FRAMES = 8;
 const MAX_FRAMES = 120;
@@ -36,12 +32,8 @@ export type AslRuntime = {
   fps: number;
   delegate: "GPU" | "CPU" | null;
   handsVisible: number;
-  recording: boolean;
-  continuous: boolean;
   /** Latest classification result (top 3). */
   guesses: WordGuess[] | null;
-  /** Push-to-sign only: top-1 below threshold, so the user must pick. */
-  unsure: boolean;
 };
 
 export type UseAslWordsOptions = {
@@ -49,6 +41,8 @@ export type UseAslWordsOptions = {
   videoRef: RefObject<HTMLVideoElement | null>;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   onWord: (guess: WordGuess) => void;
+  /** Front or rear camera. Raw frames are unmirrored either way, so the model input is unchanged. */
+  facing?: CameraFacing;
 };
 
 type TimedFrame = { t: number; frame: Float32Array };
@@ -108,26 +102,20 @@ function trimSegment(frames: Float32Array[]): Float32Array[] {
   return trimmed.length > MAX_FRAMES ? trimmed.slice(-MAX_FRAMES) : trimmed;
 }
 
-export function useAslWords({ enabled, videoRef, canvasRef, onWord }: UseAslWordsOptions) {
+export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "user" }: UseAslWordsOptions) {
   const [runtime, setRuntime] = useState<AslRuntime>({
     state: "idle",
     message: "Camera off",
     fps: 0,
     delegate: null,
     handsVisible: 0,
-    recording: false,
-    continuous: false,
     guesses: null,
-    unsure: false,
   });
 
-  const recordingRef = useRef(false);
-  const segmentRef = useRef<Float32Array[]>([]);
   const busyRef = useRef(false);
   const onWordRef = useRef(onWord);
 
-  // Continuous-mode state, all in refs so the frame loop never re-renders.
-  const continuousRef = useRef(false);
+  // Sliding-window state, all in refs so the frame loop never re-renders.
   const windowRef = useRef<TimedFrame[]>([]);
   const lastInferRef = useRef(0);
   const lastHandAtRef = useRef(0);
@@ -147,65 +135,6 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord }: UseAslWord
     candidateRef.current = null;
   }, []);
 
-  const setContinuous = useCallback(
-    (on: boolean) => {
-      continuousRef.current = on;
-      recordingRef.current = false;
-      segmentRef.current = [];
-      resetContinuous();
-      publish({
-        continuous: on,
-        recording: false,
-        guesses: null,
-        unsure: false,
-        message: on ? "Continuous: sign words one after another" : `Hold ${SIGN_KEY.toUpperCase()} and sign one word`,
-      });
-    },
-    [publish, resetContinuous],
-  );
-
-  const beginSign = useCallback(() => {
-    if (continuousRef.current || recordingRef.current || busyRef.current) return;
-    recordingRef.current = true;
-    segmentRef.current = [];
-    publish({ recording: true, guesses: null, unsure: false, message: "Signing… release to finish" });
-  }, [publish]);
-
-  const endSign = useCallback(async () => {
-    if (!recordingRef.current) return;
-    recordingRef.current = false;
-    const frames = trimSegment(segmentRef.current);
-    segmentRef.current = [];
-
-    if (frames.length < MIN_FRAMES) {
-      publish({
-        recording: false,
-        message: frames.length === 0 ? "No hands seen — keep your hands in frame" : "Too short — hold the key for the whole sign",
-      });
-      return;
-    }
-
-    busyRef.current = true;
-    publish({ recording: false, message: "Reading sign…" });
-    try {
-      const classifier = await getAslClassifier();
-      const guesses = await classifier.classify(frames);
-      const top = guesses[0];
-      const unsure = !top || top.probability < WORD_THRESHOLD;
-      publish({
-        guesses,
-        unsure,
-        message: unsure ? "Not sure — pick the right word or sign again" : `Read “${top.gloss}”`,
-      });
-      if (!unsure && top) onWordRef.current(top);
-    } catch (error) {
-      console.error("[asl] classify failed", error);
-      publish({ message: "Word model failed to run. Check the console; starter gestures still work." });
-    } finally {
-      busyRef.current = false;
-    }
-  }, [publish]);
-
   /** One continuous-mode inference over the current sliding window. */
   const inferContinuous = useCallback(async () => {
     const frames = trimSegment(windowRef.current.map((entry) => entry.frame));
@@ -215,7 +144,6 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord }: UseAslWord
     try {
       const classifier = await getAslClassifier();
       const guesses = await classifier.classify(frames);
-      if (!continuousRef.current) return;
       const top = guesses[0];
       const confident = Boolean(top) && top.probability >= CONTINUOUS_THRESHOLD;
       const stable = confident && candidateRef.current === top.gloss;
@@ -239,43 +167,10 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord }: UseAslWord
     }
   }, [publish, resetContinuous]);
 
-  /** User resolved an unsure result by tapping one of the top 3. */
-  const pickGuess = useCallback(
-    (guess: WordGuess) => {
-      publish({ unsure: false, guesses: null, message: `Picked “${guess.gloss}”` });
-      onWordRef.current(guess);
-    },
-    [publish],
-  );
-
-  // Hold W to sign (push-to-sign mode only).
-  useEffect(() => {
-    if (!enabled) return;
-    const isTyping = (target: EventTarget | null) =>
-      target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-    const down = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== SIGN_KEY || event.repeat || isTyping(event.target)) return;
-      event.preventDefault();
-      beginSign();
-    };
-    const up = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== SIGN_KEY) return;
-      void endSign();
-    };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-    };
-  }, [enabled, beginSign, endSign]);
-
   useEffect(() => {
     if (!enabled) {
-      recordingRef.current = false;
-      segmentRef.current = [];
       windowRef.current = [];
-      publish({ state: "idle", message: "Camera off", fps: 0, handsVisible: 0, recording: false });
+      publish({ state: "idle", message: "Camera off", fps: 0, handsVisible: 0, guesses: null });
       return;
     }
 
@@ -311,7 +206,7 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord }: UseAslWord
       let handle: Awaited<ReturnType<typeof startCamera>>;
       try {
         // Holistic downsamples anyway; 640x480 keeps the frame upload cheap.
-        handle = await startCamera(video, () => cancelled, { width: 640, height: 480 });
+        handle = await startCamera(video, () => cancelled, { width: 640, height: 480 }, facing);
       } catch (error) {
         if (cancelled) return;
         const described = describeCameraError(error);
@@ -345,9 +240,7 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord }: UseAslWord
       publish({
         state: "ready",
         delegate: holistic.delegate,
-        message: continuousRef.current
-          ? "Continuous: sign words one after another"
-          : `Hold ${SIGN_KEY.toUpperCase()} and sign one word`,
+        message: "Sign words one after another",
       });
 
       const tick = (now: number) => {
@@ -360,24 +253,20 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord }: UseAslWord
             );
             if (hands.length) lastHandAtRef.current = now;
 
-            if (recordingRef.current) segmentRef.current.push(frameTo543(result, frameOptions));
-
-            if (continuousRef.current) {
-              if (hands.length === 0 && now - lastHandAtRef.current > HANDS_GONE_RESET_MS) {
-                // Hands down: forget the half-seen sign so it can't leak into the next one.
-                if (windowRef.current.length) resetContinuous();
-              } else {
-                const win = windowRef.current;
-                win.push({ t: now, frame: frameTo543(result, frameOptions) });
-                while (win.length && (now - win[0].t > WINDOW_MS || win.length > MAX_FRAMES)) win.shift();
-                if (!busyRef.current && now - lastInferRef.current >= INFER_EVERY_MS) {
-                  lastInferRef.current = now;
-                  void inferContinuous();
-                }
+            if (hands.length === 0 && now - lastHandAtRef.current > HANDS_GONE_RESET_MS) {
+              // Hands down: forget the half-seen sign so it can't leak into the next one.
+              if (windowRef.current.length) resetContinuous();
+            } else {
+              const win = windowRef.current;
+              win.push({ t: now, frame: frameTo543(result, frameOptions) });
+              while (win.length && (now - win[0].t > WINDOW_MS || win.length > MAX_FRAMES)) win.shift();
+              if (!busyRef.current && now - lastInferRef.current >= INFER_EVERY_MS) {
+                lastInferRef.current = now;
+                void inferContinuous();
               }
             }
 
-            drawHands(canvas, video, hands, recordingRef.current || (continuousRef.current && hands.length > 0));
+            drawHands(canvas, video, hands, hands.length > 0);
 
             frames += 1;
             if (now - fpsWindowStart >= 1000) {
@@ -412,11 +301,10 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord }: UseAslWord
         }
       }
       stopCamera?.();
-      recordingRef.current = false;
-      segmentRef.current = [];
       windowRef.current = [];
     };
-  }, [enabled, publish, videoRef, canvasRef, inferContinuous, resetContinuous]);
+    // facing: switching front/rear restarts the camera in place.
+  }, [enabled, facing, publish, videoRef, canvasRef, inferContinuous, resetContinuous]);
 
-  return { runtime, beginSign, endSign, pickGuess, setContinuous };
+  return { runtime };
 }
