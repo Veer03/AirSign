@@ -12,7 +12,13 @@ const SETTINGS_KEY = "settings";
 export async function loadSettings(): Promise<Settings> {
   try {
     const stored = await get<Partial<Settings>>(SETTINGS_KEY, appStore);
-    return { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+    const settings = { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+    // IndexedDB can contain settings written by older app versions. Never let
+    // an outdated voice value reach the speech API.
+    if (!["warm", "calm", "energetic"].includes(String(settings.voice))) {
+      settings.voice = DEFAULT_SETTINGS.voice;
+    }
+    return settings;
   } catch {
     return DEFAULT_SETTINGS;
   }

@@ -19,6 +19,7 @@ import { LandmarkBuffer } from "./landmark-buffer";
 import { LocalStubRecognizer, type SignRecognizer, type SignResult } from "./sign-recognizer";
 import { HAND_CONNECTIONS, type Landmark } from "./landmarks";
 import { getASLAlphabetClassifier, type ASLAlphabetClassifier } from "./asl-alphabet";
+import { classifyASLNumber } from "./asl-numbers";
 
 export type SignLock = {
   id: string;
@@ -41,6 +42,7 @@ export type UseGesturesOptions = {
   twoHands: boolean;
   /** Use the supplied fingerspelling dataset to recognize static ASL letters. */
   alphabetMode: boolean;
+  numberMode: boolean;
   onLock: LockHandler;
   videoRef: RefObject<HTMLVideoElement | null>;
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -154,7 +156,7 @@ function unionBounds(hands: TrackedHand[]) {
 }
 
 export function useGestures(options: UseGesturesOptions) {
-  const { enabled, dwellMs, repeatMs, twoHands, alphabetMode, onLock, videoRef, canvasRef, stageRef, ringRef } =
+  const { enabled, dwellMs, repeatMs, twoHands, alphabetMode, numberMode, onLock, videoRef, canvasRef, stageRef, ringRef } =
     options;
 
   const [runtime, setRuntime] = useState<GestureRuntime>({
@@ -170,6 +172,7 @@ export function useGestures(options: UseGesturesOptions) {
   const onLockRef = useRef(onLock);
   const twoHandsRef = useRef(twoHands);
   const alphabetModeRef = useRef(alphabetMode);
+  const numberModeRef = useRef(numberMode);
   const alphabetClassifierRef = useRef<ASLAlphabetClassifier | null>(null);
   const alphabetErrorRef = useRef(false);
   const dwellRef = useRef(dwellMs);
@@ -204,6 +207,7 @@ export function useGestures(options: UseGesturesOptions) {
 
   useEffect(() => {
     alphabetModeRef.current = alphabetMode;
+    numberModeRef.current = numberMode;
     bufferRef.current.clear();
     signStabilizerRef.current.reset();
     if (!alphabetMode) {
@@ -223,7 +227,7 @@ export function useGestures(options: UseGesturesOptions) {
         },
       );
     }
-  }, [alphabetMode, publish]);
+  }, [alphabetMode, numberMode, publish]);
 
   const applyZoom = useCallback(
     (hands: TrackedHand[]) => {
@@ -373,6 +377,7 @@ export function useGestures(options: UseGesturesOptions) {
                   ? middleFingerHands.slice(0, 2)
                   : fingerHeartHands.slice(0, 1);
             const useOneHand =
+              numberModeRef.current ||
               !twoHandsRef.current ||
               (alphabetModeRef.current &&
                 !hasDoubleWow &&
@@ -400,6 +405,21 @@ export function useGestures(options: UseGesturesOptions) {
             let sign: SignResult | null;
             if (alphabetModeRef.current && alphabetSpecialHands.length > 0) {
               sign = signRecognizerRef.current.recognize([landmarkFrame]);
+            } else if (numberModeRef.current) {
+              const hand = usable[0];
+              const number = classifyASLNumber(hand?.landmarks ?? null);
+              sign = number
+                ? {
+                    id: `asl-number-${number}`,
+                    label: String(number),
+                    phrase: String(number),
+                    gesture: `ASL_NUMBER_${number}` as GestureId,
+                    hands: 1,
+                    side: hand?.side,
+                    confidence: 0.82,
+                    model: "asl-number-landmarks",
+                  }
+                : null;
             } else if (alphabetModeRef.current) {
               const hand = usable[0];
               const letter = alphabetClassifierRef.current?.classify(hand?.landmarks, hand?.side);
@@ -456,7 +476,8 @@ export function useGestures(options: UseGesturesOptions) {
               lastUi = now;
 
               const handCandidates: HandCandidate[] = usable.map((hand) => {
-                const gesture = alphabetModeRef.current
+                const practiceMode = alphabetModeRef.current || numberModeRef.current;
+                const gesture = practiceMode
                   ? (sign?.gesture ?? null)
                   : isGestureId(hand.gesture)
                     ? hand.gesture
@@ -465,12 +486,12 @@ export function useGestures(options: UseGesturesOptions) {
                   id: hand.id,
                   side: hand.side,
                   gesture,
-                  label: alphabetModeRef.current
-                    ? sign?.label ?? "No letter"
+                  label: practiceMode
+                    ? sign?.label ?? (numberModeRef.current ? "No number" : "No letter")
                     : gesture
                       ? (phraseForGesture(gesture)?.label ?? "Gesture")
                       : "No gesture",
-                  confidence: alphabetModeRef.current ? (sign?.confidence ?? 0) : hand.confidence,
+                  confidence: practiceMode ? (sign?.confidence ?? 0) : hand.confidence,
                 };
               });
 
@@ -506,8 +527,8 @@ export function useGestures(options: UseGesturesOptions) {
                   : sign
                     ? result.repeatWaitMs > 0
                       ? `Same signal — repeats in ${(result.repeatWaitMs / 1000).toFixed(1)}s`
-                      : alphabetModeRef.current
-                        ? "Hold the letter to add it"
+                      : alphabetModeRef.current || numberModeRef.current
+                        ? `Hold the ${numberModeRef.current ? "number" : "letter"} to add it`
                         : "Hold to lock the phrase"
                     : usable.length >= 2
                       ? "Two hands — no matching pair"

@@ -73,9 +73,12 @@ export async function startCamera(
     audio: false,
     video: {
       facingMode: "user",
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      frameRate: { ideal: 30, max: 60 },
+      // Hand tracking does not need a 720p stream. A 640×480 feed cuts the
+      // per-frame image work substantially while keeping hands detailed
+      // enough for landmark recognition.
+      width: { ideal: 640 },
+      height: { ideal: 480 },
+      frameRate: { ideal: 30, max: 30 },
     },
   });
 
