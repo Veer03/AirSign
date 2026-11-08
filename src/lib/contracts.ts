@@ -12,7 +12,8 @@ export type GestureId =
   | "Pointing_Up"
   | "ILoveYou"
   | "Middle_Finger"
-  | "Finger_Heart";
+  | "Finger_Heart"
+  | `ASL_${"A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z"}`;
 
 export type GestureSource = "camera" | "keyboard" | "custom";
 

@@ -83,7 +83,24 @@ export function detect(
   const timestamp = Math.max(timestampMs, lastTimestamp + 1);
   lastTimestamp = timestamp;
 
-  const result = recognizer.recognizeForVideo(video, timestamp);
+  // TensorFlow Lite emits this informational CPU-delegate message through
+  // console.error in some browsers. Next's dev overlay mistakes it for an
+  // application error, so filter only this known INFO line during inference.
+  const originalConsoleError = console.error;
+  console.error = (...args: Parameters<typeof console.error>) => {
+    const message = args.map((arg) => String(arg)).join(" ");
+    if (message.includes("INFO: Created TensorFlow Lite XNNPACK delegate for CPU.")) {
+      return;
+    }
+    originalConsoleError.call(console, ...args);
+  };
+
+  let result: ReturnType<GestureRecognizer["recognizeForVideo"]>;
+  try {
+    result = recognizer.recognizeForVideo(video, timestamp);
+  } finally {
+    console.error = originalConsoleError;
+  }
   const count = Math.max(result.landmarks?.length ?? 0, result.gestures?.length ?? 0);
   const hands: RawHand[] = [];
 

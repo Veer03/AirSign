@@ -18,6 +18,7 @@ import { HandTracker, type TrackedHand } from "./hand-tracker";
 import { LandmarkBuffer } from "./landmark-buffer";
 import { LocalStubRecognizer, type SignRecognizer, type SignResult } from "./sign-recognizer";
 import { HAND_CONNECTIONS, type Landmark } from "./landmarks";
+import { getASLAlphabetClassifier, type ASLAlphabetClassifier } from "./asl-alphabet";
 
 export type SignLock = {
   id: string;
@@ -38,6 +39,8 @@ export type UseGesturesOptions = {
   repeatMs: number;
   /** When false, only the most confident hand is considered. */
   twoHands: boolean;
+  /** Use the supplied fingerspelling dataset to recognize static ASL letters. */
+  alphabetMode: boolean;
   onLock: LockHandler;
   videoRef: RefObject<HTMLVideoElement | null>;
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -151,7 +154,7 @@ function unionBounds(hands: TrackedHand[]) {
 }
 
 export function useGestures(options: UseGesturesOptions) {
-  const { enabled, dwellMs, repeatMs, twoHands, onLock, videoRef, canvasRef, stageRef, ringRef } =
+  const { enabled, dwellMs, repeatMs, twoHands, alphabetMode, onLock, videoRef, canvasRef, stageRef, ringRef } =
     options;
 
   const [runtime, setRuntime] = useState<GestureRuntime>({
@@ -166,6 +169,9 @@ export function useGestures(options: UseGesturesOptions) {
 
   const onLockRef = useRef(onLock);
   const twoHandsRef = useRef(twoHands);
+  const alphabetModeRef = useRef(alphabetMode);
+  const alphabetClassifierRef = useRef<ASLAlphabetClassifier | null>(null);
+  const alphabetErrorRef = useRef(false);
   const dwellRef = useRef(dwellMs);
   const trackerRef = useRef(new HandTracker());
   const bufferRef = useRef(new LandmarkBuffer());
@@ -195,6 +201,29 @@ export function useGestures(options: UseGesturesOptions) {
   const publish = useCallback((next: Partial<GestureRuntime>) => {
     setRuntime((prev) => ({ ...prev, ...next }));
   }, []);
+
+  useEffect(() => {
+    alphabetModeRef.current = alphabetMode;
+    bufferRef.current.clear();
+    signStabilizerRef.current.reset();
+    if (!alphabetMode) {
+      alphabetErrorRef.current = false;
+      return;
+    }
+
+    alphabetErrorRef.current = false;
+    if (!alphabetClassifierRef.current) {
+      publish({ message: "Loading ASL alphabet data…", sign: null, combo: null });
+      void getASLAlphabetClassifier().then(
+        (classifier) => {
+          alphabetClassifierRef.current = classifier;
+        },
+        () => {
+          alphabetErrorRef.current = true;
+        },
+      );
+    }
+  }, [alphabetMode, publish]);
 
   const applyZoom = useCallback(
     (hands: TrackedHand[]) => {
@@ -324,9 +353,10 @@ export function useGestures(options: UseGesturesOptions) {
           try {
             const frame = detect(recognizer, video, now);
             const tracked = trackerRef.current.update(frame.hands, now);
-            const usable = twoHandsRef.current
-              ? tracked
-              : [...tracked].sort((a, b) => b.confidence - a.confidence).slice(0, 1);
+            const useOneHand = alphabetModeRef.current || !twoHandsRef.current;
+            const usable = useOneHand
+              ? [...tracked].sort((a, b) => b.confidence - a.confidence).slice(0, 1)
+              : tracked;
 
             bufferRef.current.push({
               t: now,
@@ -339,9 +369,25 @@ export function useGestures(options: UseGesturesOptions) {
               })),
             });
 
-            const sign: SignResult | null = signRecognizerRef.current.recognize(
-              bufferRef.current.snapshot(400),
-            );
+            let sign: SignResult | null;
+            if (alphabetModeRef.current) {
+              const hand = usable[0];
+              const letter = alphabetClassifierRef.current?.classify(hand?.landmarks, hand?.side);
+              sign = letter
+                ? {
+                    id: `asl-${letter.letter}`,
+                    label: letter.letter,
+                    phrase: letter.letter,
+                    gesture: `ASL_${letter.letter}` as GestureId,
+                    hands: 1,
+                    side: letter.side,
+                    confidence: letter.confidence,
+                    model: "asl-landmarks-knn",
+                  }
+                : null;
+            } else {
+              sign = signRecognizerRef.current.recognize(bufferRef.current.snapshot(400));
+            }
             const result = signStabilizerRef.current.push(
               sign ? { sign: sign.id, confidence: sign.confidence } : null,
               now,
@@ -380,13 +426,21 @@ export function useGestures(options: UseGesturesOptions) {
               lastUi = now;
 
               const handCandidates: HandCandidate[] = usable.map((hand) => {
-                const gesture = isGestureId(hand.gesture) ? hand.gesture : null;
+                const gesture = alphabetModeRef.current
+                  ? (sign?.gesture ?? null)
+                  : isGestureId(hand.gesture)
+                    ? hand.gesture
+                    : null;
                 return {
                   id: hand.id,
                   side: hand.side,
                   gesture,
-                  label: gesture ? (phraseForGesture(gesture)?.label ?? "Gesture") : "No gesture",
-                  confidence: hand.confidence,
+                  label: alphabetModeRef.current
+                    ? sign?.label ?? "No letter"
+                    : gesture
+                      ? (phraseForGesture(gesture)?.label ?? "Gesture")
+                      : "No gesture",
+                  confidence: alphabetModeRef.current ? (sign?.confidence ?? 0) : hand.confidence,
                 };
               });
 
@@ -413,12 +467,18 @@ export function useGestures(options: UseGesturesOptions) {
                 : null;
 
               const message =
-                usable.length === 0
+                alphabetModeRef.current && alphabetErrorRef.current
+                  ? "ASL alphabet data could not load. Turn alphabet mode off and retry."
+                  : alphabetModeRef.current && !alphabetClassifierRef.current
+                    ? "Loading ASL alphabet data…"
+                    : usable.length === 0
                   ? "Show your hand to the camera"
                   : sign
                     ? result.repeatWaitMs > 0
                       ? `Same signal — repeats in ${(result.repeatWaitMs / 1000).toFixed(1)}s`
-                      : "Hold to lock the phrase"
+                      : alphabetModeRef.current
+                        ? "Hold the letter to add it"
+                        : "Hold to lock the phrase"
                     : usable.length >= 2
                       ? "Two hands — no matching pair"
                       : "Show a starter gesture";

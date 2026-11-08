@@ -15,6 +15,7 @@ type CameraPanelProps = {
   /** Wait before the same held signal can speak again. */
   repeatMs: number;
   twoHands: boolean;
+  alphabetMode: boolean;
   onEnable: () => void;
   onDisable?: () => void;
   onLock: (event: GestureEvent) => void;
@@ -42,6 +43,7 @@ function CameraSurface({
   dwellMs,
   repeatMs,
   twoHands,
+  alphabetMode,
   onEnable,
   onDisable,
   onLock,
@@ -64,6 +66,7 @@ function CameraSurface({
     dwellMs,
     repeatMs,
     twoHands,
+    alphabetMode,
     onLock: handleLock,
     videoRef,
     canvasRef,
@@ -152,7 +155,9 @@ function CameraSurface({
               </div>
               <h2 className="text-lg font-medium">Turn on the camera</h2>
               <p className="mt-2 text-sm text-white/60">
-                Show a starter gesture with one hand, or hold a matching pair with both.
+                {alphabetMode
+                  ? "Show one static ASL alphabet letter, or press its A–Z key."
+                  : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
                 The video stays in this browser — only text is sent to the server.
               </p>
               <button
@@ -162,7 +167,9 @@ function CameraSurface({
               >
                 <Camera className="h-4 w-4" /> Enable camera
               </button>
-              <p className="label mt-4 !text-[9px]">or press keys 1–9</p>
+              <p className="label mt-4 !text-[9px]">
+                {alphabetMode ? "A–Z keys also work" : "or press keys 1–9"}
+              </p>
             </div>
           </div>
         ) : null}
@@ -202,11 +209,15 @@ function CameraSurface({
                     handCount > 0 ? "bg-emerald-400" : "bg-white/40",
                   )}
                 />
-                {handCount === 0
-                  ? "searching for hands"
-                  : handCount === 1
-                    ? "1 hand detected"
-                    : `${handCount} hands detected`}
+                {alphabetMode
+                  ? handCount === 0
+                    ? "show one hand"
+                    : "ASL alphabet hand"
+                  : handCount === 0
+                    ? "searching for hands"
+                    : handCount === 1
+                      ? "1 hand detected"
+                      : `${handCount} hands detected`}
               </span>
             </div>
 
@@ -283,7 +294,7 @@ function CameraSurface({
             />
 
             <p className="label pointer-events-none absolute bottom-4 right-4 z-10 hidden bg-black/50 px-2 py-1 !text-[8px] backdrop-blur sm:block">
-              starter gestures · not sign language
+              {alphabetMode ? "ASL fingerspelling · letters only" : "starter gestures · not sign language"}
             </p>
           </>
         ) : null}
@@ -291,10 +302,13 @@ function CameraSurface({
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/15 px-4 py-2.5">
         <p className="text-xs text-white/50">
-          Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or
-          uploaded.
+          {alphabetMode
+            ? "Hold one static ASL letter pose until the ring fills. Nothing is stored or uploaded."
+            : "Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or uploaded."}
         </p>
-        <p className="label !text-[9px]">keys 1–9 = phrases</p>
+        <p className="label !text-[9px]">
+          {alphabetMode ? "ASL alphabet · static A–Z poses · keys A–Z" : "keys 1–9 = phrases"}
+        </p>
       </div>
     </PixelPanel>
   );

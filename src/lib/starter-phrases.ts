@@ -27,6 +27,10 @@ const byGesture = new Map<GestureId, Phrase>(
 );
 
 export function phraseForGesture(gesture: GestureId): Phrase | undefined {
+  if (gesture.startsWith("ASL_")) {
+    const letter = gesture.slice(4);
+    return { id: `asl-${letter.toLowerCase()}`, gesture, label: letter, text: letter };
+  }
   return byGesture.get(gesture);
 }
 
