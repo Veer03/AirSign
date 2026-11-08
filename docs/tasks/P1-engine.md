@@ -2,6 +2,8 @@
 
 **Mission:** turn the camera into a reliable `SignCapture` on-device: hand landmarks, a short capture buffer, and coarse candidates. Video never leaves the browser.
 
+**Current implementation:** local camera + MediaPipe GestureRecognizer + live predictions for its seven general handshape classes. ASL word candidates are not connected yet. Run `npm run setup:assets` before `npm run dev` on a fresh clone. See [RESEARCH.md](../RESEARCH.md) R16 for the ASL classifier path.
+
 Read first: [../SPEC.md](../SPEC.md) · [../RESOURCES.md](../RESOURCES.md) · [../ARCHITECTURE.md](../ARCHITECTURE.md) · [../DESIGN.md](../DESIGN.md) · [../ROADMAP.md](../ROADMAP.md)
 
 ## Files you own

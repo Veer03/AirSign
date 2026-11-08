@@ -7,8 +7,8 @@ Related: [SPEC.md](SPEC.md) · [RESOURCES.md](RESOURCES.md) · [ARCHITECTURE.md]
 ## Status
 
 - Docs and plan are updated for the conversation-window product.
-- Base site is **built**: landing + `/app` on typed mocks.
-- Next action: P1 real landmarks, P2 `/api/gist` + `/api/speak`, P3 wire the real modules behind `ports.ts`.
+- Base site and local hand tracking are **built**. `/app` now displays MediaPipe's starter general-handshape predictions for up to two hands.
+- Next action: train or integrate a small, signer-tested ASL word classifier; then pass its word candidates to Gemini and connect ElevenLabs speech plus live reply captions.
 - Contracts in `src/lib/contracts.ts` are the shared language. Changes require a team announcement.
 
 ## Tiers

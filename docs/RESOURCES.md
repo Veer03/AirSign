@@ -172,7 +172,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_USE_MOCKS=1
 ```
 
-`NEXT_PUBLIC_USE_MOCKS=1` keeps the app on typed mocks. Set it to `0` only when the real camera and voice modules are ready.
+`NEXT_PUBLIC_USE_MOCKS=1` keeps curated gist responses for typed demo captures. The camera runs the local MediaPipe tracker and general handshape classifier; speech output and reply captions remain mocked until P2 connects them.
 
 ---
 

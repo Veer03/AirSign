@@ -39,8 +39,8 @@ export class CaptureBuffer {
       context,
       frames: detected.length,
       durationMs: Math.round(durationMs),
-      // Hand tracking alone does not identify signs. Keep candidates empty
-      // until a verified gesture/sign classifier is integrated.
+      // The canned gesture model labels general handshapes, not ASL words.
+      // Keep candidates empty until the vocabulary classifier is integrated.
       candidates: [],
       summary: summary.length ? summary : undefined,
     };

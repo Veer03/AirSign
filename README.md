@@ -8,11 +8,11 @@ The feeling is an interpreter sitting between two people. The claim is not. AirS
 
 ## Status
 
-**Base site and P1 hand tracking are built.** `/` is the landing page. `/app` opens the camera only when you press **Start camera**, then tracks up to two hands locally. Speech and live captions still run on typed mocks; sign recognition is not connected yet.
+**The base site, live hand tracking, and starter gesture classifier are built.** `/` is the landing page. `/app` opens the camera only when you press **Start camera**, then tracks up to two hands locally and displays MediaPipe's general handshape predictions. Speech and live captions still run on typed mocks. An ASL word classifier is the next step.
 
 - Use **Use typed demo capture** if you do not want to grant camera access.
 - Camera captures contain normalized landmark numbers only; frames and video are never sent to the server.
-- The gist builder has a local fallback. Live tracking does not yet produce verified sign candidates, so it will not show a guessed gist.
+- The gist builder has a local fallback. General handshape labels are not treated as ASL words, so live tracking does not produce a guessed sentence.
 - Camera tracking is connected through `src/lib/ports.ts`; Gemini and voice integrations remain upcoming.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what comes next and [docs/RESOURCES.md](docs/RESOURCES.md) for accounts, model IDs, and what each API can do.
@@ -20,7 +20,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for what comes next and [docs/RESOURCES.m
 ## The loop
 
 1. **Camera on.** Press **Start camera** for a live view with an on-device, glowing hand-landmark overlay for up to two hands.
-2. **Capture a short burst.** The listener taps **Capture hand movement** (or presses Space). AirSign records a short normalized landmark summary. Sign classification is not connected yet.
+2. **Capture a short burst.** The listener taps **Capture hand movement** (or presses Space). AirSign records a short normalized landmark summary; live general handshape predictions appear in the camera panel.
 3. **Frame the gist.** Gemini turns context + coarse candidates into one short first-person sentence.
 4. **Show it, never speak it yet.** The sentence appears with **"AI gist — please confirm"** and a confidence value.
 5. **Confirm → speak.** ElevenLabs (or the browser fallback) speaks it.
@@ -65,7 +65,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. The landing demo needs no `.env.local` or API keys. In `/app`, press **Start camera** to test live tracking, or use the typed demo capture without camera access. Speech and captions remain mocked.
+Open `http://localhost:3000`. After `npm install`, run `npm run setup:assets` once to download the self-hosted MediaPipe models and copy its WASM runtime. Then press **Start camera** in `/app` to test hand tracking and the starter classifier, or use the typed demo capture without camera access. Speech and captions remain mocked.
 
 To try the real Gemini gist, copy `.env.example` to `.env.local` and add `GEMINI_API_KEY`. Without a key, `/api/gist` falls back to a deterministic local sentence.
 
