@@ -1,4 +1,4 @@
-import { MIN_CONFIDENCE, type GestureId } from "@/lib/contracts";
+﻿import { MIN_CONFIDENCE, type GestureId } from "@/lib/contracts";
 
 export type RawFrame = { gesture: string; confidence: number } | null;
 
@@ -25,7 +25,6 @@ const GESTURES = new Set<string>([
   "Middle_Finger",
   "Finger_Heart",
   "Wow",
-  "Custom_Gesture",
   ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((letter) => `ASL_${letter}`),
 ]);
 

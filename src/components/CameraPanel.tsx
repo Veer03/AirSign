@@ -11,8 +11,6 @@ import { saveDelegate, savedDelegate, type Delegate } from "@/engine/delegate";
 import { disposeRecognizer } from "@/engine/recognizer";
 import { disposeHolistic } from "@/engine/holistic";
 import type { CameraFacing } from "@/engine/camera";
-import type { Landmark } from "@/engine/landmarks";
-import type { StoredCustomGesture } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { HoldRing } from "./HoldRing";
 import { PixelPanel } from "./PixelPanel";
@@ -26,18 +24,10 @@ type CameraPanelProps = {
   /** Harshpal's kNN fingerspelling mode (owned by the page). */
   alphabetMode: boolean;
   onAlphabetModeChange?: (on: boolean) => void;
+  onWordsModeChange?: (on: boolean) => void;
   /** Harshpal's ASL 1–10 mode (owned by the page). */
   numberMode: boolean;
   onNumberModeChange?: (on: boolean) => void;
-  /** User-recorded gestures; only active while Custom tab is selected. */
-  customMode: boolean;
-  onCustomModeChange?: (on: boolean) => void;
-  customGestures: StoredCustomGesture[];
-  /** 3-2-1 countdown to capture the current hand pose in Custom mode. */
-  captureRequestId?: number;
-  /** Recorded motion frames (each frame: 1 or 2 hands of 21 landmarks). */
-  onCustomCaptured?: (frames: Landmark[][][]) => void;
-  onCustomCaptureStatus?: (status: { state: "idle" | "countdown" | "capturing" | "saved" | "error"; message: string }) => void;
   practiceLetter?: string | null;
   practiceNumber?: string | null;
   onEnable: () => void;
@@ -58,16 +48,18 @@ export function CameraPanel(props: CameraPanelProps) {
   );
 }
 
-const MODES = ["starter", "words", "alphabet", "alphabet-pretrained", "numbers", "custom"] as const;
+const MODES = ["starter", "words", "alphabet", "numbers"] as const;
 type Mode = (typeof MODES)[number];
 const MODE_LABELS: Record<Mode, string> = {
-  starter: "starter",
-  words: "asl words",
-  alphabet: "alphabet",
-  "alphabet-pretrained": "alphabet · pretrained",
-  numbers: "numbers",
-  custom: "custom",
+  starter: "starter phrases",
+  words: "ASL words",
+  alphabet: "A–Z letters",
+  numbers: "ASL numbers",
 };
+const MODE_GROUPS = [
+  { label: "Quick phrases", modes: ["starter"] },
+  { label: "ASL recognition", modes: ["words", "alphabet", "numbers"] },
+] as const;
 
 function sideTag(side: HandCandidate["side"]) {
   if (side === "left") return "L";
@@ -82,14 +74,9 @@ function CameraSurface({
   twoHands,
   alphabetMode,
   onAlphabetModeChange,
+  onWordsModeChange,
   numberMode,
   onNumberModeChange,
-  customMode,
-  onCustomModeChange,
-  customGestures,
-  captureRequestId = 0,
-  onCustomCaptured,
-  onCustomCaptureStatus,
   practiceLetter,
   practiceNumber,
   facing = "user",
@@ -104,60 +91,48 @@ function CameraSurface({
   const ringRef = useRef<HTMLDivElement | null>(null);
 
   // "starter" = MediaPipe handshapes; "words" = Holistic + asl-signs model;
-  // "alphabet" = Harshpal's kNN letters (page-owned alphabetMode, same
-  // GestureRecognizer pipeline as starter); "custom" = user-recorded landmarks.
-  // Read the URL after mount so SSR and the client agree.
+  // "alphabet" = static A–Z classifiers (page-owned alphabetMode, same
+  // GestureRecognizer pipeline as starter). Read the URL after mount so SSR
+  // and the client agree.
   const [baseMode, setBaseMode] = useState<"starter" | "words">("starter");
-  // Which letter classifier the alphabet tabs use: Harshpal's kNN or the
-  // pretrained MLP. The page's "ASL A–Z" button keeps whichever was last used.
+  // The A–Z classifier is a setting inside one alphabet mode, not a duplicate mode.
   const [alphabetModel, setAlphabetModel] = useState<AlphabetModel>("knn");
-  const latestLandmarksRef = useRef<Landmark[][] | null>(null);
-  const [captureCountdown, setCaptureCountdown] = useState<number | null>(null);
-  const [captureRecording, setCaptureRecording] = useState(false);
-  const captureFramesRef = useRef<Landmark[][][]>([]);
-  const captureRecordingUntilRef = useRef<number | null>(null);
-  const lastCaptureRequestRef = useRef(0);
-  const CAPTURE_MOTION_MS = 2200;
   // Practice drill letters are checked with the pretrained classifier.
   useEffect(() => {
     if (practiceLetter) setAlphabetModel("pretrained");
   }, [practiceLetter]);
-  const mode: Mode = customMode
-    ? "custom"
-    : numberMode
-      ? "numbers"
-      : alphabetMode
-        ? alphabetModel === "pretrained"
-          ? "alphabet-pretrained"
-          : "alphabet"
-        : baseMode;
+  const mode: Mode = numberMode
+    ? "numbers"
+    : alphabetMode
+      ? "alphabet"
+      : baseMode;
   const switchMode = useCallback(
     (next: Mode) => {
-      if (next === "alphabet" || next === "alphabet-pretrained") {
-        setAlphabetModel(next === "alphabet-pretrained" ? "pretrained" : "knn");
-        onCustomModeChange?.(false);
+      if (next === "alphabet") {
+        onWordsModeChange?.(false);
         onNumberModeChange?.(false);
         onAlphabetModeChange?.(true);
       } else if (next === "numbers") {
-        onCustomModeChange?.(false);
+        onWordsModeChange?.(false);
         onAlphabetModeChange?.(false);
         onNumberModeChange?.(true);
-      } else if (next === "custom") {
-        onAlphabetModeChange?.(false);
-        onNumberModeChange?.(false);
-        onCustomModeChange?.(true);
       } else {
+        onWordsModeChange?.(next === "words");
         onAlphabetModeChange?.(false);
         onNumberModeChange?.(false);
-        onCustomModeChange?.(false);
         setBaseMode(next);
       }
     },
-    [onAlphabetModeChange, onCustomModeChange, onNumberModeChange],
+    [onAlphabetModeChange, onNumberModeChange, onWordsModeChange],
   );
   useEffect(() => {
-    const fromUrl = new URLSearchParams(window.location.search).get("mode");
-    if (fromUrl && (MODES as readonly string[]).includes(fromUrl)) switchMode(fromUrl as Mode);
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("mode");
+    if (params.get("alphabetModel") === "pretrained" || fromUrl === "alphabet-pretrained") {
+      setAlphabetModel("pretrained");
+    }
+    if (fromUrl === "alphabet-pretrained") switchMode("alphabet");
+    else if (fromUrl && (MODES as readonly string[]).includes(fromUrl)) switchMode(fromUrl as Mode);
     // Mount only: the URL seeds the initial mode.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -170,89 +145,22 @@ function CameraSurface({
       return;
     }
     const url = new URL(window.location.href);
-    if (mode === "starter") url.searchParams.delete("mode");
-    else url.searchParams.set("mode", mode);
+    if (mode === "starter") {
+      url.searchParams.delete("mode");
+      url.searchParams.delete("alphabetModel");
+    } else {
+      url.searchParams.set("mode", mode);
+      if (mode === "alphabet" && alphabetModel === "pretrained") {
+        url.searchParams.set("alphabetModel", "pretrained");
+      } else {
+        url.searchParams.delete("alphabetModel");
+      }
+    }
     window.history.replaceState(null, "", url);
-  }, [mode]);
+  }, [mode, alphabetModel]);
   const words = mode === "words";
-  // Harshpal's alphabet tab also recognizes the Wow / finger-heart / middle
-  // finger poses; the pretrained tab stays letters-only.
-  const knnAlphabet = mode === "alphabet";
-  const custom = mode === "custom";
-
-  useEffect(() => {
-    if (!custom) {
-      setCaptureCountdown(null);
-      setCaptureRecording(false);
-      captureFramesRef.current = [];
-      captureRecordingUntilRef.current = null;
-    }
-  }, [custom]);
-
-  const cloneHands = (hands: Landmark[][]) => hands.map((hand) => hand.map((p) => ({ ...p })));
-
-  const handleCaptureFrame = useCallback(
-    (hands: Landmark[][] | null) => {
-      const cloned = hands && hands.length > 0 ? cloneHands(hands) : null;
-      latestLandmarksRef.current = cloned;
-      if (!custom || !captureRecording) return;
-      if (cloned) {
-        captureFramesRef.current.push(cloned);
-        if (captureFramesRef.current.length > 60) captureFramesRef.current.shift();
-      }
-      const until = captureRecordingUntilRef.current;
-      if (until && performance.now() >= until) {
-        setCaptureRecording(false);
-        captureRecordingUntilRef.current = null;
-        const frames = captureFramesRef.current;
-        captureFramesRef.current = [];
-        if (frames.length === 0) {
-          onCustomCaptureStatus?.({ state: "error", message: "No hands detected while recording. Show 1 or 2 hands and try again." });
-          return;
-        }
-        onCustomCaptureStatus?.({ state: "capturing", message: "Saving gesture…" });
-        onCustomCaptured?.(frames);
-      }
-    },
-    [captureRecording, custom, onCustomCaptureStatus, onCustomCaptured],
-  );
-
-  useEffect(() => {
-    if (!custom || !captureRequestId || captureRequestId === lastCaptureRequestRef.current) return;
-    lastCaptureRequestRef.current = captureRequestId;
-    if (!enabled) {
-      onCustomCaptureStatus?.({ state: "error", message: "Turn the camera on before capturing." });
-      return;
-    }
-    setCaptureRecording(false);
-    captureFramesRef.current = [];
-    captureRecordingUntilRef.current = null;
-    setCaptureCountdown(3);
-    onCustomCaptureStatus?.({ state: "countdown", message: "Hold your gesture steady… 3" });
-  }, [captureRequestId, custom, enabled, onCustomCaptureStatus]);
-
-  useEffect(() => {
-    if (captureCountdown === null) return;
-    if (captureCountdown <= 0) {
-      setCaptureCountdown(null);
-      const current = latestLandmarksRef.current;
-      if (!current || current.length === 0) {
-        onCustomCaptureStatus?.({ state: "error", message: "No hands detected. Show 1 or 2 hands clearly and try again." });
-        return;
-      }
-      captureFramesRef.current = [cloneHands(current)];
-      captureRecordingUntilRef.current = performance.now() + CAPTURE_MOTION_MS;
-      setCaptureRecording(true);
-      onCustomCaptureStatus?.({ state: "capturing", message: "Recording motion now — perform your full gesture." });
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      const next = captureCountdown - 1;
-      setCaptureCountdown(next);
-      if (next > 0) onCustomCaptureStatus?.({ state: "countdown", message: `Hold your gesture steady… ${next}` });
-    }, 1000);
-    return () => window.clearTimeout(timer);
-  }, [captureCountdown, onCustomCaptureStatus]);
+  // The dataset classifier also recognizes custom interjections.
+  const knnAlphabet = alphabetModel === "knn";
 
   // CPU/GPU toggle: saved in localStorage; switching rebuilds the models by
   // remounting this surface (same path as "Try again").
@@ -304,9 +212,6 @@ function CameraSurface({
     alphabetMode,
     alphabetModel,
     numberMode,
-    customMode: custom,
-    customGestures,
-    onCaptureFrame: handleCaptureFrame,
     onLock: handleLock,
     videoRef,
     canvasRef,
@@ -353,26 +258,46 @@ function CameraSurface({
           </span>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
-          <div
-            className="no-scrollbar order-first flex w-full overflow-x-auto border border-white/25 sm:order-none sm:w-auto"
-            role="group"
-            aria-label="Recognition mode"
-          >
-            {MODES.map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={mode === value}
-                onClick={() => switchMode(value)}
-                className={cn(
-                  "label shrink-0 whitespace-nowrap px-2.5 py-2 transition sm:px-2 sm:py-1",
-                  mode === value ? "bg-white/15 !text-white" : "hover:!text-white",
-                )}
-              >
-                {MODE_LABELS[value]}
-              </button>
+          <div className="order-first flex w-full flex-wrap gap-2 sm:order-none" aria-label="Recognition modes">
+            {MODE_GROUPS.map((group) => (
+              <div key={group.label} className="flex min-w-0 items-center border border-white/25" role="group" aria-label={group.label}>
+                <span className="label label-title shrink-0 px-2 !text-[8px]">{group.label}</span>
+                {group.modes.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={mode === value}
+                    onClick={() => switchMode(value)}
+                    className={cn(
+                      "label whitespace-nowrap px-2 py-2 transition sm:px-2 sm:py-1",
+                      mode === value ? "bg-white/15 !text-white" : "hover:!text-white",
+                    )}
+                  >
+                    {MODE_LABELS[value]}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
+          {alphabetMode ? (
+            <div className="flex items-center gap-2 border border-white/20 px-2 py-1" role="group" aria-label="A–Z classifier">
+              <span className="label label-title !text-[8px]">A–Z model</span>
+              {(["knn", "pretrained"] as const).map((model) => (
+                <button
+                  key={model}
+                  type="button"
+                  aria-pressed={alphabetModel === model}
+                  onClick={() => setAlphabetModel(model)}
+                  className={cn(
+                    "label px-2 py-1 !text-[8px] transition",
+                    alphabetModel === model ? "bg-white/15 !text-white" : "hover:!text-white",
+                  )}
+                >
+                  {model === "knn" ? "dataset" : "pretrained"}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="flex border border-white/25" role="group" aria-label="Processing">
             {(["GPU", "CPU"] as const).map((value) => {
               const active = (delegateChoice ?? runtime.delegate ?? "GPU") === value;
@@ -443,15 +368,13 @@ function CameraSurface({
               </div>
               <h2 className="text-lg font-medium">Turn on the camera</h2>
               <p className="mt-2 text-sm text-white/60">
-                {custom
-                  ? "Record a gesture in the Custom panel, hold it steady, and choose what it should say. Custom gestures work only in this tab."
-                  : alphabetMode
-                    ? knnAlphabet
-                      ? "Show one static ASL letter or the Wow pose, or press its A–Z key."
-                      : "Show one static ASL letter, or press its A–Z key."
-                    : numberMode
-                      ? "Show one ASL number handshape from 1 to 10."
-                      : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
+                {alphabetMode
+                  ? knnAlphabet
+                    ? "Show one static ASL letter or the Wow pose, or press its A–Z key."
+                    : "Show one static ASL letter, or press its A–Z key."
+                  : numberMode
+                    ? "Show one ASL number handshape from 1 to 10."
+                    : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
                 The video stays in this browser — only text is sent to the server.
               </p>
               <button
@@ -462,13 +385,7 @@ function CameraSurface({
                 <Camera className="h-4 w-4" /> Enable camera
               </button>
               <p className="label mt-4 !text-[9px]">
-                {custom
-                  ? "use Capture below the camera"
-                  : alphabetMode
-                    ? "A–Z keys also work"
-                    : numberMode
-                      ? "Hold the pose to speak the number"
-                      : "or press keys 1–9"}
+                {alphabetMode ? "A–Z keys also work" : numberMode ? "Hold the pose to speak the number" : "or press keys 1–9"}
               </p>
             </div>
           </div>
@@ -517,18 +434,16 @@ function CameraSurface({
                     handCount > 0 ? "bg-emerald-400" : "bg-white/40",
                   )}
                 />
-                {alphabetMode || numberMode || custom
+                {alphabetMode || numberMode
                   ? sign?.phrase === "Wow!"
                     ? handCount === 2
                       ? "two Wow hands"
                       : "Wow sign"
                     : handCount === 0
-                      ? "show one hand"
-                      : custom
-                        ? "custom gesture hand"
-                        : numberMode
-                          ? "ASL number hand"
-                          : "ASL alphabet hand"
+                    ? "show one hand"
+                    : numberMode
+                      ? "ASL number hand"
+                      : "ASL alphabet hand"
                   : handCount === 0
                     ? "searching for hands"
                     : handCount === 1
@@ -628,21 +543,6 @@ function CameraSurface({
               </div>
             ) : null}
 
-            {custom && captureCountdown !== null ? (
-              <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center bg-black/35">
-                <div className="grid h-28 w-28 place-items-center border-4 border-accent bg-black/80">
-                  <span className="font-mono text-6xl font-bold text-accent">{captureCountdown}</span>
-                </div>
-              </div>
-            ) : null}
-            {custom && captureRecording ? (
-              <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
-                <div className="border border-accent bg-black/80 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] text-accent">
-                  Recording motion — do the full gesture now
-                </div>
-              </div>
-            ) : null}
-
             <HoldRing
               ringRef={ringRef}
               dwellMs={runtime.combo ? Math.max(dwellMs, 500) : dwellMs}
@@ -651,15 +551,13 @@ function CameraSurface({
             />
 
             <p className="label pointer-events-none absolute bottom-4 right-4 z-10 hidden bg-black/50 px-2 py-1 !text-[8px] backdrop-blur sm:block">
-              {custom
-                ? "custom gestures · this tab only"
-                : alphabetMode
-                  ? alphabetModel === "pretrained"
-                    ? "ASL fingerspelling · pretrained MLP (CC BY-NC)"
-                    : "ASL fingerspelling + Wow pose · dataset kNN"
-                  : numberMode
-                    ? "ASL numbers · 1–10"
-                    : "starter gestures · not sign language"}
+              {alphabetMode
+                ? alphabetModel === "pretrained"
+                  ? "ASL fingerspelling · pretrained MLP (CC BY-NC)"
+                  : "ASL fingerspelling + Wow pose · dataset kNN"
+                : numberMode
+                  ? "ASL numbers · 1–10"
+                  : "starter gestures · not sign language"}
             </p>
           </>
         ) : null}
@@ -669,26 +567,22 @@ function CameraSurface({
         <p className="text-xs text-white/50">
           {words
             ? "Always recording — sign ASL words one after another. 250-word vocabulary, and it can be wrong."
-            : custom
-              ? "Click Capture, wait for the 3-second countdown, then perform the full gesture motion (1 or 2 hands, ~2s recorded). Works only in this tab."
-              : alphabetMode
-                ? "Hold one static ASL letter pose until the ring fills. Nothing is stored or uploaded."
-                : numberMode
-                  ? "Hold one static ASL number pose until the ring fills. Nothing is stored or uploaded."
-                  : "Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or uploaded."}
+            : alphabetMode
+              ? "Hold one static ASL letter pose until the ring fills. Nothing is stored or uploaded."
+              : numberMode
+                ? "Hold one static ASL number pose until the ring fills. Nothing is stored or uploaded."
+                : "Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or uploaded."}
         </p>
         <p className="label !text-[9px]">
           {words
             ? "asl-signs · 250 words · always on"
-            : custom
-              ? `custom gestures · ${customGestures.length} saved · this tab only`
-              : knnAlphabet
-                ? "ASL alphabet · static A–Z poses + Wow · keys A–Z"
-                : alphabetMode
-                  ? "ASL alphabet · static A–Z poses · keys A–Z"
-                  : numberMode
-                    ? "ASL numbers · static 1–10 handshapes"
-                    : "keys 1–9 = phrases"}
+            : knnAlphabet
+              ? "ASL alphabet · static A–Z poses + Wow · keys A–Z"
+              : alphabetMode
+                ? "ASL alphabet · static A–Z poses · keys A–Z"
+                : numberMode
+                  ? "ASL numbers · static 1–10 handshapes"
+                  : "keys 1–9 = phrases"}
         </p>
       </div>
     </PixelPanel>

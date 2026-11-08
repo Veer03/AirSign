@@ -6,11 +6,10 @@ import { ArrowLeft, Camera, CameraOff, Sparkles, SwitchCamera } from "lucide-rea
 import type { GestureEvent, GestureId, Settings } from "@/lib/contracts";
 import { DEFAULT_SETTINGS } from "@/lib/contracts";
 import { makeGestureEvent, phraseForGesture, phraseForKey, STARTER_PHRASES } from "@/lib/starter-phrases";
-import { loadCustomGestures, loadSettings, saveCustomGestures, saveSettings, type StoredCustomGesture } from "@/lib/storage";
-import { normalizeHandLandmarks } from "@/engine/asl-alphabet";
+import { loadSettings, saveSettings } from "@/lib/storage";
 import { useSpeak } from "@/voice/useSpeak";
 import { CameraPanel } from "@/components/CameraPanel";
-import { CustomGesturePanel } from "@/components/CustomGesturePanel";
+import { Logo } from "@/components/Logo";
 import { PixelBackdrop } from "@/components/PixelBackdrop";
 import { PixelPanel } from "@/components/PixelPanel";
 import { SentenceStrip } from "@/components/SentenceStrip";
@@ -20,7 +19,6 @@ import { RepeatWaitPanel } from "@/components/RepeatWaitPanel";
 import { ASLAlphabetPractice } from "@/components/ASLAlphabetPractice";
 import { ASLNumberPractice } from "@/components/ASLNumberPractice";
 import { isPracticeNumber, PracticeDrill, randomPracticeTarget } from "@/components/PracticeDrill";
-import type { Landmark } from "@/engine/landmarks";
 import type { CameraFacing } from "@/engine/camera";
 import { useIsMobile } from "@/lib/useIsMobile";
 
@@ -32,14 +30,8 @@ export default function WorkspacePage() {
   const isMobile = useIsMobile();
   const [alphabetMode, setAlphabetMode] = useState(false);
   const [numberMode, setNumberMode] = useState(false);
-  const [customMode, setCustomMode] = useState(false);
-  const [customGestures, setCustomGestures] = useState<StoredCustomGesture[]>([]);
-  const [customGesturesLoaded, setCustomGesturesLoaded] = useState(false);
-  const [customDraftPhrase, setCustomDraftPhrase] = useState("");
-  const [customCaptureRequestId, setCustomCaptureRequestId] = useState(0);
-  const [customCaptureState, setCustomCaptureState] = useState<"idle" | "countdown" | "capturing" | "saved" | "error">("idle");
-  const [customCaptureStatus, setCustomCaptureStatus] = useState("");
-  const [sideTab, setSideTab] = useState<"interpret" | "practice" | "custom">("interpret");
+  const [wordsMode, setWordsMode] = useState(false);
+  const [sideTab, setSideTab] = useState<"interpret" | "practice">("interpret");
   // Charts start closed and close again whenever the Practice tab is opened.
   const [alphabetPracticeOpen, setAlphabetPracticeOpen] = useState(false);
   const [numberPracticeOpen, setNumberPracticeOpen] = useState(false);
@@ -63,25 +55,18 @@ export default function WorkspacePage() {
     const number = isPracticeNumber(target);
     setNumberMode(number);
     setAlphabetMode(!number);
+    setWordsMode(false);
     setCameraOn(true);
   }, []);
 
-  const switchSideTab = useCallback((tab: "interpret" | "practice" | "custom") => {
+  const switchSideTab = useCallback((tab: "interpret" | "practice") => {
     setSideTab(tab);
     if (tab === "practice") {
       setAlphabetPracticeOpen(false);
       setNumberPracticeOpen(false);
-      setCustomMode(false);
-    } else if (tab === "custom") {
-      setAlphabetMode(false);
-      setNumberMode(false);
-      setCustomMode(true);
-      setPracticeTarget(null);
-      setPracticeCorrect(false);
     } else {
       setPracticeTarget(null);
       setPracticeCorrect(false);
-      setCustomMode(false);
     }
   }, []);
   const { speak, prewarm, state: speakState, error: speakError, clearError } = useSpeak();
@@ -89,23 +74,6 @@ export default function WorkspacePage() {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void loadCustomGestures().then((stored) => {
-      if (cancelled) return;
-      setCustomGestures(stored);
-      setCustomGesturesLoaded(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!customGesturesLoaded) return;
-    void saveCustomGestures(customGestures);
-  }, [customGestures, customGesturesLoaded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,119 +112,10 @@ export default function WorkspacePage() {
   useEffect(() => {
     if (!voiceConfigured) return;
     void prewarm(
-      STARTER_PHRASES.map((phrase) => phrase.text).filter((text) => text.trim().length > 0),
+      STARTER_PHRASES.map((phrase) => phrase.text),
       settings.voice,
     );
   }, [voiceConfigured, settings.voice, prewarm]);
-
-  const startCustomCapture = useCallback(() => {
-    if (!cameraOn) {
-      setCustomCaptureState("error");
-      setCustomCaptureStatus("Turn the camera on before capturing.");
-      return;
-    }
-    if (!customDraftPhrase.trim()) {
-      setCustomCaptureState("error");
-      setCustomCaptureStatus("Enter a phrase for this gesture first.");
-      return;
-    }
-    setCustomCaptureRequestId((value) => value + 1);
-  }, [cameraOn, customDraftPhrase]);
-
-  const handleCustomCaptureStatus = useCallback(
-    (status: { state: "idle" | "countdown" | "capturing" | "saved" | "error"; message: string }) => {
-      setCustomCaptureState(status.state);
-      setCustomCaptureStatus(status.message);
-    },
-    [],
-  );
-
-  const handleCustomCaptured = useCallback(
-    (frames: Landmark[][][]) => {
-      if (!frames || frames.length === 0) {
-        setCustomCaptureState("error");
-        setCustomCaptureStatus("Could not capture that gesture. Keep 1 or 2 hands visible and try again.");
-        return;
-      }
-
-      const normalizeFrame = (hands: Landmark[][]): number[] | null => {
-        if (!hands || hands.length === 0) return null;
-        if (hands.length === 1) {
-          const one = normalizeHandLandmarks(hands[0]);
-          return one ? Array.from(one) : null;
-        }
-        const ordered = [...hands].sort((a, b) => (a[0]?.x ?? 0) - (b[0]?.x ?? 0)).slice(0, 2);
-        const a = normalizeHandLandmarks(ordered[0]);
-        const b = normalizeHandLandmarks(ordered[1]);
-        if (!a || !b) return null;
-        return [...Array.from(a), ...Array.from(b)];
-      };
-
-      const normalized = frames
-        .map(normalizeFrame)
-        .filter((frame): frame is number[] => Array.isArray(frame) && (frame.length === 63 || frame.length === 126));
-      if (normalized.length === 0) {
-        setCustomCaptureState("error");
-        setCustomCaptureStatus("Could not read that gesture clearly. Show full hand landmarks and try again.");
-        return;
-      }
-
-      const modalLen = normalized
-        .map((f) => f.length)
-        .sort((a, b) =>
-          normalized.filter((f) => f.length === a).length - normalized.filter((f) => f.length === b).length,
-        )[normalized.length - 1];
-      const kept = normalized.filter((f) => f.length === modalLen);
-      const hands: 1 | 2 = modalLen === 126 ? 2 : 1;
-
-      // For mostly-static captures, store an averaged frame so recognition is stable.
-      // For motion, keep the recorded sequence (trimmed) so the movement is preserved.
-      let framesToStore = kept;
-      if (kept.length > 1) {
-        let motion = 0;
-        for (let i = 1; i < kept.length; i += 1) {
-          let d = 0;
-          for (let j = 0; j < kept[i].length; j += 1) {
-            const delta = kept[i][j] - kept[i - 1][j];
-            d += delta * delta;
-          }
-          motion += Math.sqrt(d);
-        }
-        motion /= kept.length - 1;
-        if (motion < 0.14) {
-          const avg = new Array(modalLen).fill(0);
-          for (const frame of kept) for (let j = 0; j < modalLen; j += 1) avg[j] += frame[j] / kept.length;
-          framesToStore = [avg];
-        } else {
-          const maxMotionFrames = 24;
-          if (kept.length > maxMotionFrames) {
-            const step = kept.length / maxMotionFrames;
-            framesToStore = Array.from({ length: maxMotionFrames }, (_, i) => kept[Math.min(kept.length - 1, Math.floor(i * step))]);
-          }
-        }
-      }
-
-      const label = customDraftPhrase.trim();
-      const gesture: StoredCustomGesture = {
-        id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        label,
-        hands,
-        frames: framesToStore,
-        createdAt: Date.now(),
-      };
-      setCustomGestures((prev) => [...prev, gesture]);
-      setCustomDraftPhrase("");
-      setCustomCaptureState("saved");
-      setCustomCaptureStatus(
-        `Saved “${label}” (${hands === 2 ? "2 hands" : "1 hand"}, ${framesToStore.length > 1 ? "motion" : "pose"}). Hold it in Custom tab to say it.`,
-      );
-    },
-    [customDraftPhrase],
-  );
-
-  const removeCustomGesture = useCallback((id: string) => {
-    setCustomGestures((prev) => prev.filter((gesture) => gesture.id !== id));
-  }, []);
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
@@ -315,27 +174,26 @@ export default function WorkspacePage() {
       <header className="sticky top-0 z-30 border-b border-white/70 bg-black/90">
         <div className="mx-auto flex h-[52px] max-w-[1500px] items-center justify-between gap-2 px-3 sm:gap-3 sm:px-4">
           <div className="flex items-center gap-4">
-            <Link href="/" className="flex items-center gap-2.5">
-              <span className="h-3 w-3 bg-accent" />
-              <span className="font-mono text-sm font-medium uppercase tracking-[0.22em]">AirSign</span>
+            <Link href="/" aria-label="AirSign home">
+              <Logo />
             </Link>
             <span className="hidden h-4 w-px bg-white/25 sm:block" />
             <Link
               href="/"
-              className="label hidden items-center gap-1 transition hover:text-white sm:flex"
+              className="label hidden items-center gap-1 !text-accent transition hover:!text-white sm:flex"
             >
               <ArrowLeft className="h-3 w-3" /> home
             </Link>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <span className="label hidden md:block">
-              {customMode
-                ? "custom gestures · this tab only"
-                : alphabetMode
-                  ? "ASL alphabet + Wow sign"
-                  : numberMode
-                    ? "ASL numbers 1–10"
+            <span className="label label-title hidden md:block">
+              {alphabetMode
+                ? "ASL alphabet + Wow sign"
+                : numberMode
+                  ? "ASL numbers 0–10"
+                  : wordsMode
+                    ? "ASL word recognition · 250 signs"
                     : "starter gestures · not sign language"}
             </span>
             {isMobile ? (
@@ -369,19 +227,19 @@ export default function WorkspacePage() {
                 Make a gesture. It speaks.
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-white/50">
-                {customMode
-                  ? "Custom mode only: record a gesture, set the phrase it should say, and hold that gesture to trigger it."
-                  : alphabetMode
-                    ? "Hold a static ASL letter pose or the Wow pose until the ring fills. The result is added and spoken if speak-on-lock is on."
-                    : numberMode
-                      ? "Hold a static ASL number handshape until the ring fills. The result is added and spoken if speak-on-lock is on."
+                {alphabetMode
+                  ? "Hold a static ASL letter pose or the Wow pose until the ring fills. The result is added and spoken if speak-on-lock is on."
+                  : numberMode
+                    ? "Hold a static ASL number handshape until the ring fills. The result is added and spoken if speak-on-lock is on."
+                    : wordsMode
+                      ? "Sign one ASL word at a time. A 250-sign model guesses from the movement and adds a word when it is confident."
                       : "Hold a starter pose — one hand, or a matching pair — until the ring fills. Speak-on-lock is "}
-                {!alphabetMode && !numberMode && !customMode ? (
+                {!alphabetMode && !numberMode && !wordsMode ? (
                   <span className={settings.autoSpeak ? "text-accent" : "text-white/80"}>
                     {settings.autoSpeak ? "on" : "off"}
                   </span>
                 ) : null}
-                {alphabetMode || numberMode || customMode
+                {alphabetMode || numberMode || wordsMode
                   ? " The video never leaves this device."
                   : ". The video never leaves this device."}
               </p>
@@ -398,18 +256,13 @@ export default function WorkspacePage() {
             repeatMs={settings.repeatMs}
             twoHands={settings.twoHands}
             alphabetMode={alphabetMode}
+            onWordsModeChange={setWordsMode}
             practiceLetter={practiceTarget && !isPracticeNumber(practiceTarget) ? practiceTarget : null}
             practiceNumber={practiceTarget && isPracticeNumber(practiceTarget) ? practiceTarget : null}
             onAlphabetModeChange={setAlphabetMode}
             facing={facing}
             numberMode={numberMode}
             onNumberModeChange={setNumberMode}
-            customMode={customMode}
-            onCustomModeChange={setCustomMode}
-            customGestures={customGestures}
-            captureRequestId={customCaptureRequestId}
-            onCustomCaptured={handleCustomCaptured}
-            onCustomCaptureStatus={handleCustomCaptureStatus}
             onEnable={() => setCameraOn(true)}
             onDisable={() => setCameraOn(false)}
             onLock={handleLock}
@@ -453,8 +306,8 @@ export default function WorkspacePage() {
         </section>
 
         <aside className="min-w-0 space-y-5 lg:col-span-4">
-          <div className="grid grid-cols-3 border border-white/25" role="tablist" aria-label="Side panel">
-            {(["interpret", "practice", "custom"] as const).map((tab) => (
+          <div className="grid grid-cols-2 border border-white/25" role="tablist" aria-label="Side panel">
+            {(["interpret", "practice"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -467,7 +320,7 @@ export default function WorkspacePage() {
                     : "px-3 py-2.5 text-xs uppercase tracking-[0.12em] text-white/65 transition hover:bg-white/10 hover:text-white"
                 }
               >
-                {tab === "interpret" ? "Interpret" : tab === "practice" ? "Practice" : "Custom"}
+                {tab === "interpret" ? "Interpret" : "Practice"}
               </button>
             ))}
           </div>
@@ -483,31 +336,11 @@ export default function WorkspacePage() {
                 onPick={startPractice}
               />
             </>
-          ) : sideTab === "custom" ? (
-            <>
-              <CustomGesturePanel
-                gestures={customGestures}
-                captureState={customCaptureState}
-                captureStatus={customCaptureStatus}
-                draftPhrase={customDraftPhrase}
-                cameraEnabled={cameraOn}
-                onDraftPhraseChange={setCustomDraftPhrase}
-                onStartCapture={startCustomCapture}
-                onRemove={removeCustomGesture}
-              />
-              <PixelPanel className="p-4">
-                <p className="label">How it works</p>
-                <p className="mt-2 text-sm leading-relaxed text-white/65">
-                  Custom gestures are saved on this device and keep working when you switch tabs and come back.
-                  Recognition runs only while the camera mode is <span className="text-white">Custom</span>.
-                </p>
-              </PixelPanel>
-            </>
           ) : (
             <>
               <PixelPanel className="p-5">
                 <div className="flex items-center justify-between">
-                  <span className="label">last locked phrase</span>
+                  <span className="label label-title">last locked phrase</span>
                   <span className="label uppercase">
                     {last
                       ? `${last.source} · ${
@@ -571,7 +404,7 @@ export default function WorkspacePage() {
 
       <footer className="mx-auto max-w-[1500px] px-4 pb-8">
         <p className="label text-center !text-[9px]">
-          not an interpreter · starter gestures only · nothing is spoken without a lock
+          not a full interpreter · ASL words mode guesses from a limited vocabulary
         </p>
       </footer>
     </div>

@@ -22,7 +22,7 @@ export function SettingsBar({
   return (
     <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
       <label className="flex flex-col gap-1.5">
-        <span className="label">voice</span>
+        <span className="label label-title">voice</span>
         <select
           value={settings.voice}
           onChange={(event) => onChange({ voice: event.target.value as VoiceKey })}
@@ -37,7 +37,7 @@ export function SettingsBar({
       </label>
 
       <div className="flex flex-col gap-1.5">
-        <span className="label">speak immediately</span>
+        <span className="label label-title">speak immediately</span>
         <button
           type="button"
           role="switch"
@@ -64,7 +64,7 @@ export function SettingsBar({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="label">two-hand phrases</span>
+        <span className="label label-title">two-hand phrases</span>
         <button
           type="button"
           role="switch"
@@ -91,7 +91,7 @@ export function SettingsBar({
       </div>
 
       <label className="flex min-w-[10rem] flex-col gap-1.5">
-        <span className="label">
+        <span className="label label-title">
           hold to lock <span className="text-white/80">{settings.dwellMs} ms</span>
         </span>
         <input
@@ -106,7 +106,7 @@ export function SettingsBar({
       </label>
 
       <label className="flex flex-col gap-1.5">
-        <span className="label">text size</span>
+        <span className="label label-title">text size</span>
         <input
           type="range"
           min={0.9}

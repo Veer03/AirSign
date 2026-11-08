@@ -21,15 +21,12 @@ export function SentenceStrip({
   speaking: SpeakState;
   autoSpeak: boolean;
 }) {
-  const sentence = chips
-    .map((chip) => chip.phrase)
-    .filter((phrase) => phrase.trim().length > 0)
-    .join(". ");
+  const sentence = chips.map((chip) => chip.phrase).join(". ");
 
   return (
     <PixelPanel className="flex min-h-[15rem] flex-col">
       <div className="flex items-center justify-between border-b border-white/15 px-4 py-2.5">
-        <span className="label">sentence</span>
+        <span className="label label-title">sentence</span>
         <span className="label">{chips.length} locked</span>
       </div>
 

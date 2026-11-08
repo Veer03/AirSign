@@ -57,7 +57,7 @@ export function LiveDemoPanel() {
   return (
     <PixelPanel className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-white/15 px-5 py-3">
-        <span className="label">live demo</span>
+        <span className="label label-title">live demo</span>
         <span className="label flex items-center gap-1.5 !text-[9px]">
           <span
             className={cn(
@@ -129,7 +129,7 @@ export function LiveDemoPanel() {
         </div>
 
         <div className="mt-5 border-t border-white/15 pt-4">
-          <p className="label mb-2">sentence strip</p>
+          <p className="label label-title mb-2">sentence strip</p>
           <div className="flex min-h-[30px] flex-wrap gap-2">
             {sentence.length === 0 ? (
               <span className="text-xs text-white/30">confirmed phrases land here</span>

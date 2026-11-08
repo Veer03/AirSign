@@ -67,7 +67,7 @@ export const STARTER_COMBOS: ComboDef[] = [
   {
     id: "combo-finger-heart",
     label: "Double finger heart",
-    text: "I love you",
+    text: "사랑해요",
     pair: ["Finger_Heart", "Finger_Heart"],
     gesture: "Finger_Heart",
   },

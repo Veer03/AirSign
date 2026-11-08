@@ -14,7 +14,7 @@ export function ASLNumberPractice({
     <PixelPanel className="p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="label">Practice tool</p>
+          <p className="label label-title">Practice tool</p>
           <h2 className="mt-1 text-base font-medium">ASL numbers 1–10</h2>
         </div>
         <button

@@ -72,7 +72,7 @@ export function ReplyCaptions() {
   return (
     <PixelPanel className="flex flex-col">
       <div className="flex items-center justify-between border-b border-white/15 px-4 py-2.5">
-        <span className="label">reply captions</span>
+        <span className="label label-title">reply captions</span>
         <button
           type="button"
           onClick={toggle}

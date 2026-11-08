@@ -8,7 +8,7 @@ type Sample = { letter: ASLLetter; values: Float32Array };
 const FEATURE_COUNT = 21 * 3;
 const K = 5;
 
-export function normalizeHandLandmarks(points: Landmark[], mirror = false): Float32Array | null {
+function normalize(points: Landmark[], mirror = false): Float32Array | null {
   if (points.length < 21) return null;
   const wrist = points[0];
   const middleBase = points[9];
@@ -26,7 +26,23 @@ export function normalizeHandLandmarks(points: Landmark[], mirror = false): Floa
   return values;
 }
 
-const normalize = normalizeHandLandmarks;
+/**
+ * Confidence from both agreement and closeness. Calibrated with leave-one-out
+ * on asl-landmarks.csv: 3/4/5 votes were right 71%/85%/100% of the time, and
+ * a mean squared distance to the winning samples under 0.5 was right 99% of
+ * the time vs 85% at 2–3. Votes alone ignored how close the hand actually is,
+ * so a textbook letter and a borderline one scored the same.
+ */
+export function knnConfidence(votes: number, winnerDistances: number[]): number {
+  const voteScore = Math.min(1, Math.max(0, (votes - 3) / (K - 3)));
+  const meanDistance =
+    winnerDistances.length > 0
+      ? winnerDistances.reduce((sum, value) => sum + value, 0) / winnerDistances.length
+      : Infinity;
+  // 0.1 → 0.96, 0.5 → 0.82, 1 → 0.67, 2 → 0.45, 5 → 0.14
+  const closeness = Math.exp(-meanDistance / 2.5);
+  return Math.min(0.99, 0.5 + 0.25 * voteScore + 0.24 * closeness);
+}
 
 export class ASLAlphabetClassifier {
   constructor(private readonly samples: Sample[]) {}
@@ -67,7 +83,10 @@ export class ASLAlphabetClassifier {
 
     return {
       letter: winner[0],
-      confidence: Math.min(0.95, 0.5 + winner[1] / K * 0.45),
+      confidence: knnConfidence(
+        winner[1],
+        nearest.filter((neighbor) => neighbor.letter === winner[0]).map((neighbor) => neighbor.distance),
+      ),
       side,
     };
   }
@@ -96,7 +115,7 @@ export function getASLAlphabetClassifier(): Promise<ASLAlphabetClassifier> {
           for (let i = 0; i < FEATURE_COUNT; i += 3) {
             points.push({ x: values[i], y: values[i + 1], z: values[i + 2] });
           }
-          const normalized = normalizeHandLandmarks(points);
+          const normalized = normalize(points);
           if (normalized) samples.push({ letter: label as ASLLetter, values: normalized });
         }
 

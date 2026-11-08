@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Shared contracts between lanes. Frozen once the app runs — announce changes.
  * These are the only shapes that cross component / engine / API boundaries.
  */
@@ -14,7 +14,6 @@ export type GestureId =
   | "Middle_Finger"
   | "Finger_Heart"
   | "Wow"
-  | "Custom_Gesture"
   | `ASL_${"A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z"}`;
 
 export type GestureSource = "camera" | "keyboard" | "custom";
