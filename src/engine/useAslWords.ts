@@ -139,20 +139,22 @@ function drawHands(canvas: HTMLCanvasElement, video: HTMLVideoElement, hands: Po
   const dot = clamp(width / 190, 3, 9);
 
   for (const hand of hands) {
+    ctx.beginPath();
     for (const [from, to] of HAND_CONNECTIONS) {
       const a = hand[from];
       const b = hand[to];
       if (!a || !b) continue;
-      ctx.beginPath();
       ctx.moveTo(a.x * width, a.y * height);
       ctx.lineTo(b.x * width, b.y * height);
-      ctx.stroke();
     }
+    ctx.stroke();
+    ctx.beginPath();
     for (const point of hand) {
-      ctx.beginPath();
+      // Start a separate subpath so fill() keeps the landmarks as dots.
+      ctx.moveTo(point.x * width + dot, point.y * height);
       ctx.arc(point.x * width, point.y * height, dot, 0, Math.PI * 2);
-      ctx.fill();
     }
+    ctx.fill();
   }
   ctx.restore();
 }
@@ -162,7 +164,7 @@ function smoothOverlayHand(previous: Point3[] | null, current: Point3[] | null):
   if (!previous || previous.length !== current.length) return current;
 
   const movement = Math.hypot(current[0].x - previous[0].x, current[0].y - previous[0].y);
-  const response = movement > 0.025 ? 0.88 : 0.68;
+  const response = movement > 0.025 ? 0.9 : 0.76;
   return current.map((point, index) => {
     const before = previous[index];
     return {
@@ -296,7 +298,9 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
     let stopCamera: (() => void) | null = null;
     let frames = 0;
     let fpsWindowStart = performance.now();
+    let lastVideoTime = -1;
     let lastUi = 0;
+    let lastOverlay = 0;
     const frameOptions = readFrameOptions();
 
     const schedule = (tick: (now: number) => void) => {
@@ -360,6 +364,13 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
       const tick = (now: number) => {
         if (cancelled) return;
         if (video.readyState >= 2 && video.videoWidth > 0) {
+          if (!usingVideoFrame) {
+            if (video.currentTime === lastVideoTime) {
+              schedule(tick);
+              return;
+            }
+            lastVideoTime = video.currentTime;
+          }
           try {
             const result = detectHolistic(holistic.landmarker, video, now);
             const leftHand = result.leftHandLandmarks?.[0] ?? null;
@@ -389,7 +400,10 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
             const displayHands = [overlayHandsRef.current.left, overlayHandsRef.current.right].filter(
               (hand): hand is Point3[] => Boolean(hand),
             );
-            drawHands(canvas, video, displayHands, hands.length > 0);
+            if (now - lastOverlay >= 33) {
+              lastOverlay = now;
+              drawHands(canvas, video, displayHands, hands.length > 0);
+            }
 
             frames += 1;
             if (now - fpsWindowStart >= 1000) {

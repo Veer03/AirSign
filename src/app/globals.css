@@ -86,7 +86,9 @@
   background: #080808;
 }
 
-[data-theme="matte"] .backdrop-blur {
+/* Covers backdrop-blur-sm / -[2px] too: blurring over live video re-runs
+   every camera frame. */
+[data-theme="matte"] [class*="backdrop-blur"] {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
@@ -111,6 +113,9 @@
     linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
   background-size: 64px 64px;
+}
+
+.pixel-grid-mask {
   -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 38%, #000 10%, transparent 82%);
   mask-image: radial-gradient(ellipse 80% 70% at 50% 38%, #000 10%, transparent 82%);
 }
@@ -194,23 +199,32 @@
 
 /* ---------- living surface ---------- */
 
+/* Background animations move whole layers with transform (composited on the
+   GPU) instead of animating background-position, which repainted the full
+   screen every frame. Same motion as before: the grid shifts one 64px cell;
+   the beam layer is 220% wide and sweeps between the old 130% and -30%
+   background positions (-1.56 and +0.36 viewport widths). */
 @keyframes grid-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
   to {
-    background-position: 64px 64px;
+    transform: translate3d(64px, 64px, 0);
   }
 }
 
 .grid-drift {
   animation: grid-drift 24s linear infinite;
+  will-change: transform;
 }
 
 @keyframes beam-sweep {
   0%,
   100% {
-    background-position: 130% 0;
+    transform: translate3d(-70.909%, 0, 0);
   }
   50% {
-    background-position: -30% 0;
+    transform: translate3d(16.364%, 0, 0);
   }
 }
 
@@ -222,9 +236,9 @@
     rgba(255, 255, 255, 0.05) 50%,
     transparent 58%
   );
-  background-size: 220% 100%;
-  background-repeat: no-repeat;
+  transform: translate3d(-70.909%, 0, 0);
   animation: beam-sweep 16s ease-in-out infinite;
+  will-change: transform;
 }
 
 /* Give the live camera and hand tracker more rendering headroom while active. */

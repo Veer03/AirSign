@@ -3,35 +3,73 @@ import type { Landmark } from "./landmarks";
 
 export type TrackedHand = RawHand & { id: string };
 
+/**
+ * One Euro filter settings (Casiez et al. 2012), the standard filter for
+ * landmark jitter. Cutoff rises with speed: a still hand gets heavy smoothing
+ * (no shimmer), a moving hand gets almost none (no lag). Speed is measured in
+ * palm lengths per second, so it behaves the same near or far from the camera.
+ *
+ * At 30 fps: still ≈ 2.5 Hz (α≈0.34), 1 palm/s ≈ 6.5 Hz (α≈0.57),
+ * 3 palm/s ≈ 16.5 Hz (α≈0.78).
+ */
+const MIN_CUTOFF_HZ = 1.5;
+const BETA = 5;
+const DERIVATIVE_CUTOFF_HZ = 1;
+const FALLBACK_DT = 1 / 30;
+
 type Track = {
   id: string;
   cx: number;
   cy: number;
   lastSeen: number;
   landmarks: Landmark[] | null;
+  /** Filtered speed per landmark, palm lengths per second. */
+  speeds: Float32Array | null;
 };
 
-function smoothLandmarks(
-  previous: Landmark[] | null,
-  current: Landmark[] | null,
-): Landmark[] | null {
+const smoothingFactor = (dt: number, cutoffHz: number) => {
+  const tau = 1 / (2 * Math.PI * cutoffHz);
+  return 1 / (1 + tau / dt);
+};
+
+function palmLength(points: Landmark[]): number {
+  if (points.length < 10) return 0.15;
+  return Math.hypot(points[9].x - points[0].x, points[9].y - points[0].y) || 0.15;
+}
+
+/** Filters one frame in place on the track; returns the smoothed landmarks. */
+function filterLandmarks(track: Track, current: Landmark[] | null, dtSeconds: number): Landmark[] | null {
+  const previous = track.landmarks;
   if (!current || current.length === 0) return current;
-  if (!previous || previous.length !== current.length) return current;
+  if (!previous || previous.length !== current.length) {
+    track.speeds = new Float32Array(current.length);
+    return current;
+  }
 
-  const wrist = current[0];
-  const previousWrist = previous[0];
-  const wristMotion = Math.hypot(wrist.x - previousWrist.x, wrist.y - previousWrist.y);
-  // Smooth small tracking jitter while following quick hand movement closely.
-  const response = wristMotion > 0.025 ? 0.88 : 0.68;
+  const dt = dtSeconds > 0 && dtSeconds < 0.5 ? dtSeconds : FALLBACK_DT;
+  const scale = palmLength(current);
+  const speeds = track.speeds && track.speeds.length === current.length
+    ? track.speeds
+    : new Float32Array(current.length);
+  const derivativeAlpha = smoothingFactor(dt, DERIVATIVE_CUTOFF_HZ);
 
-  return current.map((point, index) => {
+  const smoothed = new Array<Landmark>(current.length);
+  for (let index = 0; index < current.length; index += 1) {
+    const point = current[index];
     const before = previous[index];
-    return {
-      x: before.x + (point.x - before.x) * response,
-      y: before.y + (point.y - before.y) * response,
-      z: before.z + (point.z - before.z) * response,
+    const rawSpeed = Math.hypot(point.x - before.x, point.y - before.y) / scale / dt;
+    const speed = speeds[index] + derivativeAlpha * (rawSpeed - speeds[index]);
+    speeds[index] = speed;
+
+    const alpha = smoothingFactor(dt, MIN_CUTOFF_HZ + BETA * speed);
+    smoothed[index] = {
+      x: before.x + alpha * (point.x - before.x),
+      y: before.y + alpha * (point.y - before.y),
+      z: before.z + alpha * (point.z - before.z),
     };
-  });
+  }
+  track.speeds = speeds;
+  return smoothed;
 }
 
 function centroid(landmarks: Landmark[] | null): { x: number; y: number } {
@@ -85,18 +123,22 @@ export class HandTracker {
         }
       }
 
+      let dtSeconds = 0;
       if (!best) {
         best = {
           id: `h${this.nextId++}`,
           cx: centre.x,
           cy: centre.y,
           lastSeen: now,
-          landmarks: hand.landmarks,
+          landmarks: null,
+          speeds: null,
         };
         this.tracks.push(best);
+      } else {
+        dtSeconds = (now - best.lastSeen) / 1000;
       }
 
-      const smoothedLandmarks = smoothLandmarks(best.landmarks, hand.landmarks);
+      const smoothedLandmarks = filterLandmarks(best, hand.landmarks, dtSeconds);
       best.cx = centre.x;
       best.cy = centre.y;
       best.lastSeen = now;

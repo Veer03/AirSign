@@ -63,6 +63,8 @@ export type UseGesturesOptions = {
   ringRef: RefObject<HTMLDivElement | null>;
   /** Front ("user", mirrored preview) or rear ("environment") camera. */
   facing?: CameraFacing;
+  /** Preload the hand model while the camera is off (default true). */
+  prewarm?: boolean;
 };
 
 export type GestureRuntime = {
@@ -128,24 +130,29 @@ function drawOverlay(
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     ctx.shadowColor = glow;
-    ctx.shadowBlur = width / 100;
+    ctx.shadowBlur = width / 160;
     ctx.lineWidth = line;
 
+    ctx.beginPath();
     for (const [from, to] of CONNECTED) {
       const a = landmarks[from];
       const b = landmarks[to];
       if (!a || !b) continue;
-      ctx.beginPath();
       ctx.moveTo(a.x * width, a.y * height);
       ctx.lineTo(b.x * width, b.y * height);
-      ctx.stroke();
     }
+    // One glow pass per hand is much cheaper than blurring every bone and dot.
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.stroke();
 
+    ctx.beginPath();
     for (const point of landmarks) {
-      ctx.beginPath();
+      // Start a separate subpath so fill() keeps the landmarks as dots.
+      ctx.moveTo(point.x * width + dot, point.y * height);
       ctx.arc(point.x * width, point.y * height, dot, 0, Math.PI * 2);
-      ctx.fill();
     }
+    ctx.fill();
 
     ctx.restore();
   }
@@ -178,6 +185,7 @@ export function useGestures(options: UseGesturesOptions) {
   const alphabetModel: AlphabetModel = options.alphabetModel ?? "knn";
   const customMode = options.customMode ?? false;
   const customGestures = options.customGestures ?? [];
+  const prewarm = options.prewarm ?? true;
   const facing: CameraFacing = options.facing ?? "user";
 
   const [runtime, setRuntime] = useState<GestureRuntime>({
@@ -286,7 +294,7 @@ export function useGestures(options: UseGesturesOptions) {
       }
 
       const zoom = zoomRef.current;
-      const alpha = zoom.primed ? 0.14 : 1;
+      const alpha = zoom.primed ? 0.22 : 1;
       zoom.cx = lerp(zoom.cx, targetX, alpha);
       zoom.cy = lerp(zoom.cy, targetY, alpha);
       zoom.z = lerp(zoom.z, targetZ, alpha);
@@ -294,7 +302,8 @@ export function useGestures(options: UseGesturesOptions) {
 
       const tx = clamp(0.5 - zoom.z * zoom.cx, 1 - zoom.z, 0);
       const ty = clamp(0.5 - zoom.z * zoom.cy, 1 - zoom.z, 0);
-      stage.style.transform = `translate3d(${(tx * 100).toFixed(3)}%, ${(ty * 100).toFixed(3)}%, 0) scale(${zoom.z.toFixed(3)})`;
+      const transform = `translate3d(${(tx * 100).toFixed(3)}%, ${(ty * 100).toFixed(3)}%, 0) scale(${zoom.z.toFixed(3)})`;
+      if (stage.style.transform !== transform) stage.style.transform = transform;
     },
     [stageRef, facing],
   );
@@ -312,7 +321,22 @@ export function useGestures(options: UseGesturesOptions) {
         repeatWaitMs: 0,
         fps: 0,
       });
-      return;
+      if (!prewarm) return;
+      // Load the hand model while the page is idle so "Enable camera" goes
+      // straight to tracking instead of waiting on the download + GPU setup.
+      const idle = (window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      });
+      const warm = () => void getRecognizer().catch(() => {
+        // Surface the real error when the camera actually starts.
+      });
+      if (idle.requestIdleCallback) {
+        const id = idle.requestIdleCallback(warm, { timeout: 3000 });
+        return () => idle.cancelIdleCallback?.(id);
+      }
+      const id = window.setTimeout(warm, 1500);
+      return () => window.clearTimeout(id);
     }
 
     const video = videoRef.current;
@@ -325,8 +349,9 @@ export function useGestures(options: UseGesturesOptions) {
     let stopCamera: (() => void) | null = null;
     let frames = 0;
     let fpsWindowStart = performance.now();
+    let lastVideoTime = -1;
     let lastUi = 0;
-    let lastOverlay = 0;
+    let lastUiKey = "";
     let configuredHands: 1 | 2 | null = null;
 
     const schedule = (tick: (now: number) => void) => {
@@ -392,6 +417,15 @@ export function useGestures(options: UseGesturesOptions) {
         if (cancelled) return;
 
         if (video.readyState >= 2 && video.videoWidth > 0) {
+          // rAF fallback can fire several times for one camera frame. Skip
+          // duplicate work rather than rerunning MediaPipe on the same pixels.
+          if (!usingVideoFrame) {
+            if (video.currentTime === lastVideoTime) {
+              schedule(tick);
+              return;
+            }
+            lastVideoTime = video.currentTime;
+          }
           try {
             const desiredHands: 1 | 2 =
               customModeRef.current ? 2 : numberModeRef.current || !twoHandsRef.current ? 1 : 2;
@@ -546,12 +580,10 @@ export function useGestures(options: UseGesturesOptions) {
               for (const hand of usable) activeIds.add(hand.id);
             }
 
-            // Skeleton strokes are decorative; redraw at 20 fps while keeping
-            // recognition and the hold timer on every camera frame.
-            if (now - lastOverlay >= 50) {
-              lastOverlay = now;
-              drawOverlay(canvas, video, usable, activeIds);
-            }
+            // One draw per camera frame (the loop already runs once per new
+            // frame), so the skeleton moves with the video instead of
+            // skipping frames whenever frame timing jitters around 33 ms.
+            drawOverlay(canvas, video, usable, activeIds);
             applyZoom(usable);
 
             if (ringRef.current) {
@@ -647,14 +679,28 @@ export function useGestures(options: UseGesturesOptions) {
                       ? "Two hands — no matching pair"
                       : "Show a starter gesture";
 
-              publish({
-                hands: handCandidates,
-                combo,
-                sign: signCandidate,
-                repeatWaitMs: Math.round(result.repeatWaitMs),
+              const repeatWaitMs = Math.round(result.repeatWaitMs);
+              // Re-render the camera panel only when something visible changed
+              // (percentages are shown rounded, so compare them rounded).
+              const pct = (value: number) => Math.round(value * 100);
+              const uiKey = [
+                handCandidates.map((h) => `${h.id}:${h.side}:${h.gesture}:${h.label}:${pct(h.confidence)}`).join(","),
+                combo ? `${combo.id}:${pct(combo.confidence)}` : "",
+                signCandidate ? `${signCandidate.id}:${pct(signCandidate.confidence)}:${signCandidate.side}` : "",
+                Math.ceil(repeatWaitMs / 100),
                 message,
-                state: "ready",
-              });
+              ].join("|");
+              if (uiKey !== lastUiKey) {
+                lastUiKey = uiKey;
+                publish({
+                  hands: handCandidates,
+                  combo,
+                  sign: signCandidate,
+                  repeatWaitMs,
+                  message,
+                  state: "ready",
+                });
+              }
             }
           } catch {
             // A single bad frame should never kill the loop.
@@ -688,7 +734,7 @@ export function useGestures(options: UseGesturesOptions) {
       if (ringRef.current) ringRef.current.style.setProperty("--hold", "0");
     };
     // facing: switching front/rear restarts the camera in place.
-  }, [enabled, facing, publish, applyZoom, videoRef, canvasRef, stageRef, ringRef]);
+  }, [enabled, prewarm, facing, publish, applyZoom, videoRef, canvasRef, stageRef, ringRef]);
 
   return runtime;
 }

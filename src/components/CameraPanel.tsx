@@ -332,6 +332,8 @@ function CameraSurface({
     stageRef,
     ringRef,
     facing,
+    // Words mode uses a different model; don't preload the gesture one there.
+    prewarm: !words,
   });
   const runtime = words
     ? { ...starterRuntime, ...asl.runtime, hands: [] as HandCandidate[] }
