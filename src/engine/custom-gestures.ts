@@ -1,4 +1,4 @@
-import type { GestureId } from "@/lib/contracts";
+﻿import type { GestureId } from "@/lib/contracts";
 import type { Landmark } from "./landmarks";
 import { clarity, poseConfidence } from "./pose-confidence";
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import { makeGestureEvent, phraseForGesture, phraseForKey, STARTER_PHRASES } from "../lib/starter-phrases";
 
 describe("starter phrases", () => {

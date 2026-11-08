@@ -1,4 +1,4 @@
-import type { Landmark } from "./landmarks";
+﻿import type { Landmark } from "./landmarks";
 
 export type ASLLetter =
   | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
@@ -24,6 +24,12 @@ function normalize(points: Landmark[], mirror = false): Float32Array | null {
     values[offset + 2] = (point.z - wrist.z) / scale;
   }
   return values;
+}
+
+/** Wrist/middle-finger normalized 21-landmark vector (63 values). Used by custom gestures. */
+export function normalizeHandLandmarks(points: Landmark[] | null | undefined, mirror = false): Float32Array | null {
+  if (!points) return null;
+  return normalize(points, mirror);
 }
 
 /**
