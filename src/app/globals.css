@@ -63,6 +63,33 @@
   background: rgba(15, 15, 15, 0.94);
 }
 
+/* Matte app surfaces use flat fills and restrained edges instead of glow. */
+[data-theme="matte"] {
+  --color-accent: #dda873;
+  --color-accent-soft: #edc394;
+}
+
+[data-theme="matte"] .pixel-panel {
+  border-color: #30302f;
+  background: #111110;
+  box-shadow: none;
+}
+
+[data-theme="matte"] .pixel-corner {
+  border-color: #3a3937;
+  background: #080808;
+}
+
+[data-theme="matte"] .backdrop-blur {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+[data-theme="matte"] .hold-ring {
+  filter: none;
+  transition: none;
+}
+
 .pixel-corner {
   position: absolute;
   z-index: 20;
@@ -192,6 +219,14 @@
   background-size: 220% 100%;
   background-repeat: no-repeat;
   animation: beam-sweep 16s ease-in-out infinite;
+}
+
+/* Give the live camera and hand tracker more rendering headroom while active. */
+[data-camera-active="true"] .pixel-voxel,
+[data-camera-active="true"] .grid-drift,
+[data-camera-active="true"] .backdrop-beam,
+[data-camera-active="true"] .pulse-dot {
+  animation-play-state: paused;
 }
 
 /* ---------- marquee ---------- */
@@ -451,4 +486,28 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 122, 0, 0.6);
+}
+
+/* ---------- mobile ---------- */
+
+/* Horizontal tab strips scroll on phones without showing a scrollbar. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Remove the tap delay and grey flash on touch devices. */
+button,
+a {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 639px) {
+  /* Keep long labels from forcing horizontal page scroll. */
+  body {
+    overflow-x: hidden;
+  }
 }

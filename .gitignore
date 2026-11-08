@@ -14,8 +14,9 @@ build/
 !.env.example
 
 # generated assets (self-hosted at setup time)
-public/models/*.task
+public/models/
 public/mediapipe/
+public/ort/
 
 # test and build artifacts
 coverage/

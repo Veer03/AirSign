@@ -58,9 +58,16 @@ export function describeCameraError(error: unknown): CameraError {
   }
 }
 
+export type CameraFacing = "user" | "environment";
+
 export async function startCamera(
   video: HTMLVideoElement,
   isCancelled: () => boolean = () => false,
+  // Hand tracking does not need a 720p stream; 640×480 cuts per-frame work
+  // while keeping hands detailed enough for landmark recognition.
+  size: { width: number; height: number } = { width: 640, height: 480 },
+  /** "user" = front/selfie camera, "environment" = rear camera (mobile). */
+  facing: CameraFacing = "user",
 ): Promise<CameraHandle> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new DOMException(
@@ -72,10 +79,11 @@ export async function startCamera(
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: {
-      facingMode: "user",
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      frameRate: { ideal: 30, max: 60 },
+      // "ideal" so desktops with one camera still fall back to it.
+      facingMode: { ideal: facing },
+      width: { ideal: size.width },
+      height: { ideal: size.height },
+      frameRate: { ideal: 30, max: 30 },
     },
   });
 
