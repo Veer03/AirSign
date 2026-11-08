@@ -28,6 +28,14 @@ function makeHand(extended: Record<keyof typeof FINGERS, boolean>): Landmark[] {
 
 const curled = { index: false, middle: false, ring: false, pinky: false };
 
+function makeFingerHeart(pinched: boolean): Landmark[] {
+  const points = makeHand(curled);
+  points[8] = { x: 0.46, y: 0.56, z: 0 };
+  // 0.6 palm lengths apart is a loose pose, not a clear fingertip pinch.
+  points[4] = { x: pinched ? 0.46 : 0.58, y: 0.56, z: 0 };
+  return points;
+}
+
 describe("detectCustomGesture", () => {
   it("detects a middle finger with the other fingers curled", () => {
     const result = detectCustomGesture(makeHand({ ...curled, middle: true }));
@@ -51,6 +59,14 @@ describe("detectCustomGesture", () => {
 
   it("ignores a closed fist", () => {
     expect(detectCustomGesture(makeHand(curled))).toBeNull();
+  });
+
+  it("recognizes a clear Korean finger-heart pinch", () => {
+    expect(detectCustomGesture(makeFingerHeart(true))?.gesture).toBe("Finger_Heart");
+  });
+
+  it("does not call a loose thumb-index pose a finger heart", () => {
+    expect(detectCustomGesture(makeFingerHeart(false))).toBeNull();
   });
 
   it("ignores missing or incomplete landmarks", () => {

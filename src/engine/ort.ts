@@ -20,9 +20,12 @@ function hasWebGpu(): boolean {
   return typeof navigator !== "undefined" && "gpu" in navigator;
 }
 
-function configure(ort: typeof Ort): typeof Ort {
+function configure(ort: typeof Ort, useWasmProxy = false): typeof Ort {
   ort.env.wasm.wasmPaths = "/ort/";
   ort.env.wasm.numThreads = 1;
+  // Run WASM inference away from the UI thread. This improves responsiveness,
+  // not raw model latency, and does not alter the model or its inputs.
+  ort.env.wasm.proxy = useWasmProxy;
   // ORT prints routine warnings (e.g. "some nodes were not assigned to the
   // preferred execution providers" for shape ops it moves to CPU) through
   // console.error. They are harmless, so only surface real errors.
@@ -33,10 +36,12 @@ function configure(ort: typeof Ort): typeof Ort {
 /** Load the stable WASM runtime for models that need predictable inference. */
 export function loadWasmOrt(): Promise<typeof Ort> {
   if (!wasmOrtPromise) {
-    wasmOrtPromise = importAtRuntime(WASM_ORT_URL).then(configure).catch((error) => {
-      wasmOrtPromise = null;
-      throw error;
-    });
+    wasmOrtPromise = importAtRuntime(WASM_ORT_URL)
+      .then((ort) => configure(ort, true))
+      .catch((error) => {
+        wasmOrtPromise = null;
+        throw error;
+      });
   }
   return wasmOrtPromise;
 }
