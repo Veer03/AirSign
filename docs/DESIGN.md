@@ -9,9 +9,10 @@ Related: [ARCHITECTURE.md](ARCHITECTURE.md) · [ROADMAP.md](ROADMAP.md)
 ## 1. Design intent
 
 - **Calm surface, alive edges.** The workspace is quiet and readable. Depth appears in the landing, the status island, and small interactions.
-- **One hero moment.** The voxel grid is the signature. Everything else supports it.
+- **One hero moment.** The conversation window — camera on one side, transcript on the other — is the signature. The voxel field is an ambient backdrop, not the product.
+- **The UI feels like an interpreter.** Two sides, one transcript, clear turn-taking. The copy never claims to be one.
 - **Accessibility is part of the aesthetic.** Large captions, high contrast, keyboard focus, and reduced motion are designed, not patched in.
-- **Honesty is visible.** Amber means "AI guess / uncertain". Cyan means "tracking / ready". Never use color alone; pair it with text.
+- **Honesty is visible.** Amber means "AI gist / uncertain". Cyan means "watching / ready". Green means "confirmed / listening". Never use color alone; pair it with text.
 
 ## 2. Principles
 
@@ -149,8 +150,8 @@ Priority: **P0** base site v1, **P1** should, **P2** could.
 |---|---|---|---|---|---|
 | 1 | 3D perspective text on scroll | Hero + section headings | CSS `perspective` + Motion `useScroll`/`useTransform` | P0 | static text |
 | 2 | 3D cylinder / rolling text | "How it works" divider | CSS 3D cylinder, scroll-linked `rotateX` | P1 | static heading |
-| 3 | Voxel / cube grid hero | Landing hero | R3F + Drei, instanced meshes, orbit | P0 | static gradient + glass card |
-| 4 | Coverflow carousel | Scenario packs | CSS 3D + Motion drag | P0 | simple grid |
+| 3 | Voxel / cube grid backdrop | Landing hero (behind the conversation window) | R3F + Drei, instanced meshes | P0 | static gradient + glass card |
+| 4 | Interactive pipeline demo | "See the loop" section | Motion state machine + CSS 3D | P0 | static three-step list |
 | 5 | Scroll 3D image grid | Feature cards | Motion `whileInView` + perspective + stagger | P0 | fade-in |
 | 6 | Infinite drag + wheel grid | Gesture/phrase gallery | Motion drag + wheel, wrap | P1 | horizontal scroll |
 | 7 | Liquid / gooey hover | CTA or privacy orb | SVG filter or R3F shader | P2 | static gradient |
@@ -266,28 +267,27 @@ Priority: **P0** base site v1, **P1** should, **P2** could.
 ### Landing (`/`)
 
 - `Nav` — glass, sticky, logo, links, "Open AirSign".
-- `Hero` — 3D text, voxel grid, glass demo card, CTA.
-- `ProblemSection` — parallax layers, large type.
-- `HowItWorks` — cylinder text + three steps.
-- `ScenarioCoverflow` — pharmacy, restaurant, transit, front desk, general.
+- `Hero` — 3D perspective headline, conversation-window preview, voxel backdrop, CTA.
+- `ConversationPreview` — camera stage + transcript + gist, static but alive.
+- `ProblemSection` — parallax layers, one concrete counter scene.
+- `HowItWorks` — three steps: point the camera, frame the gist, confirm and speak.
+- `PipelineDemo` — interactive: capture → gist → speak, with a reset.
 - `FeatureGrid3D` — six feature cards with scroll stagger.
-- `PrivacySection` — liquid orb or ASCII accent, "video never leaves your browser".
+- `PrivacySection` — "video never leaves your browser; only landmark numbers and text".
 - `HonestySection` — card stack, limits, co-design next step.
 - `FinalCTA` — dynamic island button.
 - `Footer` — links, attribution, small ASCII accent.
 
 ### App (`/app`)
 
-- `TopBar` — logo, scenario picker, settings, status island.
-- `CameraPanel` (P1) — video, skeleton overlay, live candidate, confidence.
-- `HoldRing` (P1) — dwell progress, lock state.
-- `SentenceStrip` — chips, remove, reorder, preview.
-- `ConfirmBar` — confirm, clear, "nothing is spoken until you confirm".
-- `GistCard` — "AI guess, please confirm", raw candidates, uncertainty.
-- `Captions` — `aria-live="polite"`, large type, reply button, typed fallback.
-- `SettingsBar` — theme, text size, dwell, reduced motion, voice, scenario.
-- `Waveform` — speaking level.
-- `KeyboardHints` — Space, C, R, 1–7.
+- `TopBar` — logo, context picker, settings, status island.
+- `SignCamera` (P1) — video, hand-landmark overlay, capture button, progress ring, live candidates.
+- `Transcript` — two-sided turns: signer (AI gist) and listener (captions / typed). `aria-live="polite"`.
+- `GistConfirm` — big sentence, confidence, "AI gist — please confirm", alternatives, Speak / Try again.
+- `ReplyBar` — listen button, interim/final captions, typed fallback, unsupported state.
+- `SettingsDialog` — theme, text size, capture length, reduced motion, voice, context.
+- `Waveform` — speaking level inside the gist bar.
+- `KeyboardHints` — Space capture, Enter speak, R reply, C clear.
 
 ### Motion primitives (`src/components/motion/`)
 
@@ -303,14 +303,14 @@ Priority: **P0** base site v1, **P1** should, **P2** could.
 **Landing**
 
 ```
-[ nav: logo · how it works · scenarios · privacy · Open AirSign ]
-[ hero: 3D text + voxel grid + glass card + CTA ]
-[ problem: parallax layers + large statement ]
-[ how it works: cylinder text + 3 steps ]
-[ scenarios: coverflow ]
+[ nav: logo · the loop · how it works · privacy · limits · Open AirSign ]
+[ hero: 3D headline + conversation-window preview + voxel backdrop + CTA ]
+[ problem: parallax layers + one concrete counter scene ]
+[ how it works: three steps ]
+[ pipeline demo: capture → gist → speak (interactive) ]
 [ features: scroll-triggered 3D grid ]
-[ privacy: liquid orb + copy ]
-[ honesty: card stack + limits ]
+[ privacy: local video, landmark numbers only ]
+[ honesty: limits + co-design next step ]
 [ final CTA: dynamic island ]
 [ footer: links + ASCII accent ]
 ```
@@ -318,13 +318,20 @@ Priority: **P0** base site v1, **P1** should, **P2** could.
 **App**
 
 ```
-[ top bar: logo · scenario · settings · status island ]
-[ left: camera + live candidate + hold ring ] [ right: sentence strip ]
-                                               [ preview + confirm ]
-                                               [ gist card ]
-                                               [ captions + reply ]
+[ top bar: logo · context · settings · status island ]
+[ left: signer camera + landmark overlay + capture ring + candidates ]
+[ right: transcript (signer / listener turns) ]
+[ gist confirm: big sentence + confidence + AI gist label + Speak ]
+[ reply bar: listen + interim/final captions + typed fallback ]
 [ bottom: keyboard hints ]
 ```
+
+**Turn-taking**
+
+- The signer's turn is cyan-tinted and sits on the left.
+- The listener's turn is green-tinted and sits on the right.
+- The pending gist is amber until confirmed. It only enters the transcript after **Speak**.
+- The transcript scrolls to the newest turn, but never moves while the user is reading (pause on hover/focus).
 
 ## 9. Performance rules
 

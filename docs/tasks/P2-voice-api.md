@@ -1,14 +1,14 @@
 # P2 — Voice/API
 
-**Mission:** make speech and captions feel instant and safe, and make the Gemini gist cautious and honest.
+**Mission:** make the gist cautious and honest, make speech feel instant, and make reply captions readable.
 
-Read first: [../SPEC.md](../SPEC.md) · [../ARCHITECTURE.md](../ARCHITECTURE.md) · [../ROADMAP.md](../ROADMAP.md) · [README.md](README.md)
+Read first: [../SPEC.md](../SPEC.md) · [../RESOURCES.md](../RESOURCES.md) · [../ARCHITECTURE.md](../ARCHITECTURE.md) · [../GIST_PROMPT.md](../GIST_PROMPT.md) · [../ROADMAP.md](../ROADMAP.md)
 
 ## Files you own
 
 ```
-src/app/api/speak/route.ts
 src/app/api/gist/route.ts
+src/app/api/speak/route.ts
 src/app/api/scribe-token/route.ts
 src/voice/useSpeak.ts
 src/voice/useCaptions.ts
@@ -39,8 +39,8 @@ prefetchPhrases(texts: string[], voice: VoiceKey): Promise<void>
 
 Routes:
 
+- `POST /api/gist` — `{ context, capture }` → `GistResponse`
 - `POST /api/speak` — `SpeakRequest` → `audio/mpeg`
-- `POST /api/gist` — `GistRequest` → `GistResponse`
 - `GET /api/scribe-token` — short-lived token or 501
 
 All errors: `{ error: { code, message } }`.
@@ -48,12 +48,13 @@ All errors: `{ error: { code, message } }`.
 ## Env vars
 
 ```
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.8-flash
+
 ELEVENLABS_API_KEY=
 ELEVENLABS_VOICE_WARM=
 ELEVENLABS_VOICE_CALM=
 ELEVENLABS_VOICE_ENERGETIC=
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-flash-latest
 ```
 
 Keys are server-only. Never read them in a client component or expose them via `NEXT_PUBLIC_*`.
@@ -62,14 +63,25 @@ Keys are server-only. Never read them in a client component or expose them via `
 
 ### P2.0 — Schemas and keys (T+0–0:45)
 
-- [ ] Write `schemas.ts`: `SpeakRequest` (text 1–500 chars, voice enum), `GistRequest` (scenario enum; max 8 phrases × 6 candidates; confidence 0–1), `GistResponse`.
-- [ ] Verify both API keys work with a minimal curl.
+- [ ] Write `schemas.ts`: `GistRequest` (context enum; one capture; at most 8 candidates; summary at most 256 numbers), `GistResponse` (gist 1–200 chars, confidence 0–1, alternatives ≤ 3), `SpeakRequest` (text 1–500 chars, voice enum).
+- [ ] Verify both API keys work with a minimal request.
 - [ ] Pick 3 ElevenLabs voice IDs and put them in `.env.local`.
-- [ ] Confirm the current Gemini Flash model ID.
+- [ ] Confirm the current Gemini model on our key (`gemini-3.8-flash` per docs).
 
-**Done when:** a curl to each provider returns a valid response.
+**Done when:** a request to each provider returns a valid response.
 
-### P2.1 — Speak (T+0:45–2:30)
+### P2.1 — Gist (T+0:45–2:30)
+
+- [ ] `/api/gist`: validate, build the prompt from `GIST_PROMPT.md`, call Gemini with JSON output.
+- [ ] Validate the model response with zod.
+- [ ] 5 s timeout. On failure, join the candidate labels and return `uncertain: true`.
+- [ ] Never add facts, names, numbers, or medical details.
+- [ ] Return `{ gist, uncertain, confidence, alternatives, note }` only.
+- [ ] Add a test for the fallback path (no key, timeout, malformed JSON).
+
+**Done when:** gist returns a cautious sentence; low confidence sets `uncertain: true`; fallback works with the key removed.
+
+### P2.2 — Speak (T+2:30–4:00)
 
 - [ ] `/api/speak`: validate, call ElevenLabs `POST /v1/text-to-speech/{voice_id}` with `model_id: "eleven_flash_v2_5"`, return `audio/mpeg`.
 - [ ] Map `VoiceKey` to env voice IDs. Never accept a raw voice ID from the client.
@@ -81,35 +93,17 @@ Keys are server-only. Never read them in a client component or expose them via `
 
 **Done when:** "hello" plays from ElevenLabs; the second play is instant from cache; fallback works with the key removed.
 
-### P2.2 — Live prefetch (T+2:30–3:30)
-
-- [ ] Expose `prefetchPhrases` to P3.
-- [ ] Debounce sentence changes (~400 ms) and prefetch the full sentence.
-- [ ] Do not play until the user confirms.
-- [ ] Pre-warm the 7 starter phrases before the demo.
-
-**Done when:** confirm plays near-instantly after the preview updates.
-
-### P2.3 — Captions (T+3:30–5:00)
+### P2.3 — Reply captions (T+4:00–5:30)
 
 - [ ] `useCaptions` with the Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`).
 - [ ] Track `supported`, `listening`, `interim`, `final`, `error`.
 - [ ] Handle permission denied, no speech, and unsupported browsers.
 - [ ] Expose `start`, `stop`, `clear`.
-- [ ] Support a typed fallback in P3's UI (no hook change needed).
+- [ ] Expose a typed fallback in P3's UI (no hook change needed).
 
 **Done when:** speaking into the mic produces large captions; unsupported browsers show a clear message.
 
-### P2.4 — Gist (T+5:00–6:30)
-
-- [ ] `/api/gist`: validate, call Gemini with the prompt in `../GIST_PROMPT.md`, request JSON, validate with zod.
-- [ ] 5 s timeout. On failure, return the raw candidate labels joined with spaces and `uncertain: true`.
-- [ ] Never add facts, names, numbers, or medical details.
-- [ ] Return `{ gist, uncertain, note }` only.
-
-**Done when:** gist returns a cautious sentence; low confidence sets `uncertain: true`; fallback works with the key removed.
-
-### P2.5 — Scribe token and security (T+6:30–7:30)
+### P2.4 — Scribe token and security (T+5:30–6:30)
 
 - [ ] Implement `/api/scribe-token` per current ElevenLabs docs, or return 501 with a clear message.
 - [ ] Document the decision in `docs/research/P2.md`.
@@ -118,7 +112,7 @@ Keys are server-only. Never read them in a client component or expose them via `
 
 **Done when:** the route never exposes the API key; the 501 path is documented.
 
-### P2.6 — Polish (T+13:30–16:00)
+### P2.5 — Polish (T+13:30–16:00)
 
 - [ ] Rate/credit safety: cap requests, reuse cache, avoid duplicate calls.
 - [ ] Stop audio on unmount and on new speak.
@@ -132,9 +126,10 @@ Keys are server-only. Never read them in a client component or expose them via `
 - TTS model: `eleven_flash_v2_5`. Response is `audio/mpeg`.
 - Audio cache key: SHA-256 of `text|voiceKey`.
 - Web Speech API is Chrome-centric; always show `supported`.
-- Gemini must be cautious: "AI guess, please confirm" is a UI requirement, not a suggestion.
+- Gemini must be cautious: "AI gist — please confirm" is a UI requirement, not a suggestion.
 - If a provider fails, degrade to the browser, not to silence.
-- Never auto-speak. The user confirms.
+- Never auto-speak. The person confirms.
+- Send landmarks and text only. No pixels.
 
 ## Guardrails
 
@@ -157,5 +152,5 @@ npm run build
 
 - Files changed
 - How to run it
-- Evidence: audio played, cache hit, captions, gist fallback
+- Evidence: gist output, cache hit, captions, fallback
 - Open questions

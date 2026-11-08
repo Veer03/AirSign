@@ -1,41 +1,41 @@
 # AirSign: Master Bootstrap Prompt and Team Spec
 
-> **Status:** pre-build concept and plan. Nothing here is implemented yet. Items marked VERIFY are unconfirmed — check the official docs before relying on them. This is a living document, not a contract.
+> **Status:** product direction updated Nov 7, 2026. The base site is built. This spec now describes the **conversation-window** product: a hearing person points a device at someone signing, AirSign frames the gist, the signer confirms, and a voice speaks it. It is still **not** an interpreter and **not** ASL translation.
 >
-> **Build docs:** [ARCHITECTURE.md](ARCHITECTURE.md) (base site + extension points) · [DESIGN.md](DESIGN.md) (3D/motion system) · [ROADMAP.md](ROADMAP.md) (tiers, slices, timeline) · [tasks/](tasks/) (per-person work).
+> **Build docs:** [RESOURCES.md](RESOURCES.md) (accounts, APIs, model IDs) · [ARCHITECTURE.md](ARCHITECTURE.md) · [DESIGN.md](DESIGN.md) · [ROADMAP.md](ROADMAP.md) · [tasks/](tasks/)
 
 Hackathon: HackCamp 2026 (nwPlus, UBC Vancouver), Nov 7–8, 2026. Team deadline: Nov 8, 12:00 PM PST.
-Team: 4 people. Dev tools: opencode (coding agent) and docdex (local docs index for agents).
+Team: 4 people. Dev tools: opencode and docdex.
 
 ---
 
 ## 0. How to use this file
 
-1. Everyone reads sections 1 to 4 (10 minutes). That is the whole idea, the rules, and the stack.
-2. One person pastes this ENTIRE file into opencode as the first message. opencode executes section 7 (the bootstrap task) and makes the initial commit.
-3. Save this file as `docs/SPEC.md` in the repo and run `docdexd index --repo .` so every agent sees the same context.
-4. Each person then works in their own lane (section 8) and does their research items (section 9).
-
-Items marked VERIFY are things I could not confirm. Check the official docs before relying on them.
+1. Everyone reads sections 1 to 4 (10 minutes). That is the idea, the rules, and the stack.
+2. Read [RESOURCES.md](RESOURCES.md) before touching Gemini, MediaPipe, or ElevenLabs.
+3. Each person works in their own lane (section 8) and records research in `docs/RESEARCH.md`.
+4. Items marked VERIFY are unconfirmed. Check the official docs and record the answer.
 
 ---
 
 ## 1. Mission and honesty rules (read first)
 
-AirSign is a communication helper for people who cannot easily speak or be understood in a quick moment: Deaf and hard-of-hearing signers, non-verbal people, people with speech difficulties, and people facing a language barrier. Example moment: a pharmacy counter with no interpreter available, where typing is slow.
+AirSign is a **conversation window** for people who cannot speak or cannot easily be understood in a quick moment: Deaf and hard-of-hearing signers, non-verbal people, people with speech difficulties, and people facing a language barrier.
 
-The user makes a gesture, AirSign turns it into a phrase, the user confirms, and a natural voice (ElevenLabs) speaks it. The hearing person replies by voice and sees large high-contrast captions.
+The scene we design for: a pharmacy counter with no interpreter. The hearing person holds a laptop or phone. The camera faces the person signing. The signer makes a short burst of signs. AirSign reads the hand movement, uses Gemini to frame **the gist** in one plain sentence, shows it for confirmation, and speaks it out loud. The hearing person replies by voice, and their words appear as large live captions on the same transcript.
+
+The feeling is an interpreter sitting between two people. The claim is not.
 
 Non-negotiable rules:
 
-- AirSign is NOT an interpreter and NOT ASL translation. Never write "ASL translator" or "translates sign language" in UI, README, Devpost, or the pitch.
-- Allowed wording: "communication helper", "teach it your own gestures", "gist, not translation".
-- The AI never claims certainty. It shows candidates and confidence. Low confidence shows "not sure".
-- Nothing is spoken until the user confirms it.
-- Video never leaves the browser. Only text goes to the server. Verify this in the network tab before claiming it.
-- Do not invent statistics or user quotes. Cite real sources only. The "99% of hearing people" claim is unsourced and must not be used.
-- Acknowledge criticism honestly: Deaf communities are often skeptical of sign-tech built without them. Position AirSign as a tool for small moments with no interpreter, and name next steps (co-design with Deaf users).
-- The starter gestures (open palm, thumbs up, etc.) are arbitrary mappings, not ASL. Label them "Starter gestures" in the UI.
+- AirSign is **NOT an interpreter** and **NOT ASL translation**. Never write "ASL translator", "translates sign language", or "understands sign language" in UI, README, Devpost, or the pitch.
+- Allowed wording: "communication window", "gist, not translation", "frames the gist", "confirm before speaking".
+- The AI never claims certainty. It shows a confidence value and an explicit "AI gist — please confirm" label. Low confidence shows "Not sure".
+- Nothing is spoken until the signer confirms it.
+- Video never leaves the browser. Only normalized landmark numbers and text go to the server. A single still frame is opt-in, off by default, and not part of the MVP.
+- Do not invent statistics or user quotes. Cite real sources only.
+- Acknowledge criticism honestly: Deaf communities are often skeptical of sign-tech built without them. Position AirSign as a tool for small moments with no interpreter, and name the next step (co-design with Deaf users).
+- Do not demo signs we cannot verify with a signer or a reliable source.
 
 Judging reality: Problem and User Research is a scoring criterion. Honest framing scores better than overclaiming.
 
@@ -53,170 +53,134 @@ Judging reality: Problem and User Research is a scoring criterion. Honest framin
   - Best Design (open to all): opt in and submit a Figma link.
   - Community Impact (open to all): opt in and include a brief impact statement.
   - Best Use of Gemini API (MLH): opt in and incorporate the Gemini API.
-  - Best Use of DeepSpace: only if we genuinely integrate it (judged on product value, execution, meaningful use in real user flows).
+  - Best Use of DeepSpace: only if we genuinely integrate it.
   - Best use of n8n: only if n8n does a real job in a real user flow.
   - Best Project Built with Freebuff: optional, we must use it and explain how it helped.
   - nwChoice: automatic.
 - ElevenLabs has no dedicated track on the Devpost page. Ask a mentor whether one was announced.
-- Do NOT integrate Databricks as a telemetry dump. A bolted-on log counts as tacked-on.
+- Do NOT integrate Databricks as a telemetry dump.
 
 ---
 
 ## 3. Product spec
 
-### Users and scenario
-Primary story for the demo: pharmacy counter. Scenario packs: pharmacy, restaurant, transit, front desk, general.
+### 3.1 Users and the two roles
 
-### Phase 1: MVP (must work end to end first)
-1. Camera view with a glowing hand-skeleton overlay on a canvas (mirrored).
-2. Starter gestures from MediaPipe's built-in recognizer (Closed_Fist, Open_Palm, Pointing_Up, Thumb_Down, Thumb_Up, Victory, ILoveYou; ignore None), each mapped to an editable phrase.
-3. Hold-to-lock with a circular progress ring. Default dwell 900 ms, adjustable 500 to 2000 ms (also an accessibility feature).
-4. Sentence strip: locked phrases appear as chips that can be removed or reordered.
-5. Confirm button, then ElevenLabs speaks the sentence. Three voice presets.
-6. Reply mode: hearing person holds a button and speaks; large high-contrast live captions appear. Start with the browser Web Speech API.
-7. Everything operable by buttons and keyboard (Space = confirm, C = clear, R = hold to reply).
-8. Themes: dark neon, high-contrast yellow on black, light. Text size slider. Reduced-motion toggle.
+- **Signer** — the person who cannot speak easily. Signs at the camera.
+- **Listener** — the hearing person. Holds the device, reads the gist, hears the voice, and replies.
 
-### Phase 2: stand-out features
-9. Teach-a-gesture: hold a pose, it records about 30 frames, the user names a phrase, stored in IndexedDB. Matching uses kNN with a rejection threshold.
-10. Pre-rendered and cached audio for saved phrases (instant playback, saves credits).
-11. Reply captions via ElevenLabs Scribe Realtime (fallback: Web Speech API).
-12. Gemini "gist": joins candidates into one cautious sentence with an uncertainty flag. The user always confirms.
+One device. The camera faces the signer. The screen and speaker face the listener. Both see the same transcript.
 
-### Phase 3: stretch (pick at most one or two, only after Phase 2 is solid)
-13. Gist mode for real signs: isolated signs, push-to-sign (hold Space), about 15 to 25 signs in one scenario pack. Hand landmarks plus pose landmarks (face and shoulder positions). Sequence matching with dynamic time warping (DTW) over about 32 frames. Show top 3 candidates with confidence. Go/no-go: at least about 85% accuracy on held-out tests with 3 different people, else label it experimental or cut it. Only use signs verified from reliable sources or a signer.
-14. Two-phone conversation room (DeepSpace sync): hearing person scans a QR code, captions sync live.
-15. n8n help alert: the phrase "I need help" triggers a webhook that notifies a saved contact (email or chat is easier than SMS for a demo, VERIFY node options).
+### 3.2 The core loop (MVP, must work end to end)
 
-### Out of scope
-Continuous sign recognition, open-vocabulary ASL translation, accounts or login, server database, Databricks, claims of replacing interpreters.
+1. **Camera on.** A live view of the signer with a glowing hand-landmark overlay. Status: "Watching your hands."
+2. **Capture a short burst.** The listener taps **Capture** (or presses Space). AirSign records ~2–4 seconds of landmarks. A progress ring shows the capture.
+3. **Frame the gist.** MediaPipe produces coarse candidates. `POST /api/gist` sends context + candidates + a compact landmark summary to Gemini. Gemini returns one short first-person sentence, a confidence value, alternatives, and an uncertainty flag.
+4. **Show it, never speak it yet.** The sentence appears in large type with **"AI gist — please confirm"**. Low confidence shows **"Not sure"** and the alternatives.
+5. **Confirm → speak.** The signer or listener presses **Speak**. ElevenLabs (or the browser fallback) speaks the sentence. It is added to the transcript as a signer turn.
+6. **Reply → captions.** The listener presses **Listen** and speaks. Their words appear as large live captions and are added as a listener turn.
+7. **Every step has a button and a keyboard path.** Camera failure falls back to typing.
+
+### 3.3 What is deliberately out of scope
+
+- Continuous, open-vocabulary sign recognition.
+- Word-for-word ASL translation.
+- Accounts, a server database, or a cloud transcript.
+- Streaming video to any model.
+- Claims of replacing a human interpreter.
+
+### 3.4 Context packs
+
+The old scenario carousel is gone. A small **context** selector remains inside `/app` and settings. It only tunes the Gemini prompt: pharmacy, restaurant, transit, front desk, general. It is a hint, not a vocabulary.
+
+### 3.5 States the UI must handle
+
+`idle`, `watching`, `capturing`, `thinking`, `ready` (gist waiting), `listening`, `speaking`, `unsure`, `denied`, `error`, `unsupported captions`.
 
 ---
 
 ## 4. Architecture and tech stack
 
-Browser (private, on-device): camera, hand tracking, matcher, sentence strip, settings, IndexedDB storage.
-Tiny server (Next.js route handlers, keys never in the client): `/api/speak`, `/api/gist`, `/api/scribe-token`, optional `/api/help-alert`.
+Browser (private, on-device): camera, hand landmarks, normalization, capture buffer, transcript, settings.
+
+Tiny server (Next.js route handlers, keys never in the client): `/api/gist`, `/api/speak`, optional `/api/scribe-token`.
 
 ### Libraries
-- Framework: latest stable Next.js (App Router), React, TypeScript (strict).
-- Styling: Tailwind CSS v4, shadcn/ui, lucide-react, next/font (Atkinson Hyperlegible for captions, a clean sans for UI).
-- Vision: `@mediapipe/tasks-vision` (GestureRecognizer, VIDEO mode). Do NOT use the legacy `@mediapipe/hands` package; Google ended support for the legacy solutions in 2023.
-- Voice: ElevenLabs. TTS model `eleven_flash_v2_5` (low latency). STT model `scribe_v2_realtime` via `@elevenlabs/react` (`useScribe` hook). Use plain `fetch` for TTS to keep dependencies small.
-- LLM: Gemini via `@google/genai`. Model ID from env, default alias `gemini-flash-latest`. Check AI Studio for the free Flash model available on our key. VERIFY exact SDK parameter names for JSON/structured output.
-- Storage: `idb-keyval` (IndexedDB) for custom gestures, audio cache, settings.
-- Validation: `zod` for all API request and response bodies.
-- Tests: `vitest` for pure logic (normalization, kNN, hold timer, schemas).
-- Optional: `qrcode` or `qrcode.react` (only if building the two-phone room).
 
-Pin exact versions after install and commit the lockfile.
-
-### Vision details
-- MediaPipe model file: download `gesture_recognizer.task` (URL in the MediaPipe Gesture Recognizer web docs: `https://storage.googleapis.com/mediapipe-tasks/gesture_recognizer/gesture_recognizer.task`) into `public/models/`.
-- Copy the wasm folder from `node_modules/@mediapipe/tasks-vision/wasm` into `public/mediapipe/wasm`. Self-host both so venue Wi-Fi cannot break the demo.
-- Recognition calls block the main thread, so run inference in a Web Worker. RISK: MediaPipe in a Next.js worker can be fiddly. If worker setup takes more than 45 minutes, run on the main thread, detect every second frame, and optimize later. Ship first.
-- Camera and mic require HTTPS or localhost.
-- Landmark normalization for custom gestures: translate to wrist origin, scale by the wrist to middle-finger-MCP distance, mirror left hands, flatten 21 x 3 into 63 floats.
-- kNN: k = 5, reject as "unknown" if the mean neighbour distance exceeds a calibrated threshold.
-- Hold-to-lock: majority vote over the last 8 frames, confidence at least 0.6 for built-in gestures, a 600 ms cooldown after each lock to avoid repeats. Ignore None.
-
-### Voice details
-- TTS: `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}`, header `xi-api-key`, JSON body `{ text, model_id: "eleven_flash_v2_5" }`, response is `audio/mpeg`. Max 500 characters per request in our API.
-- Voice IDs: do not guess. Each person picks 3 voices in the ElevenLabs dashboard; IDs go in env vars.
-- Audio cache: IndexedDB, key = SHA-256 of `text|voiceKey` (Web Crypto). Pre-render saved phrases when they are saved.
-- Scribe Realtime token: the server must hand the browser a short-lived token so the API key is never exposed. VERIFY the exact token endpoint in the ElevenLabs docs.
-- Fallbacks: `window.speechSynthesis` if ElevenLabs fails; Web Speech API for captions if Scribe fails. Note the Web Speech API is Chrome-centric.
+- Framework: Next.js 16 App Router, React 19, TypeScript strict.
+- Styling: Tailwind CSS v4, shadcn/ui, lucide-react, next/font.
+- Vision: `@mediapipe/tasks-vision` (HandLandmarker, and optionally GestureRecognizer). Self-host wasm and model.
+- Voice: ElevenLabs `eleven_flash_v2_5` for TTS; Web Speech API for reply captions; Scribe only as a fallback.
+- LLM: Gemini via `@google/genai`. Default `gemini-3.8-flash`. Model ID from env.
+- Storage: `idb-keyval`.
+- Validation: `zod`.
+- Tests: `vitest`.
+- 3D/motion (landing only): `motion`, Three.js, R3F, Drei.
 
 ### Gist (Gemini) details
-- `/api/gist` receives `{ scenario, candidates }`, calls Gemini with the system prompt in section 10 and a JSON schema response, validates with zod, and returns `{ gist, uncertain, note }`.
-- If Gemini fails or times out (5 s), return the raw candidate labels joined with spaces and `uncertain: true`.
 
-### Environment variables (`.env.local`, never committed)
-See `.env.example` in section 5.
+- `/api/gist` receives `{ context, capture }` where `capture` has `frames`, `durationMs`, `candidates`, and an optional compact `summary`.
+- Calls Gemini with the prompt in `GIST_PROMPT.md` and a JSON schema.
+- Validates with zod.
+- 5 s timeout. On failure, join the candidate labels and return `uncertain: true`.
+- Returns `{ gist, uncertain, confidence, alternatives, note }`.
+- Never adds facts, names, numbers, or medical details.
+
+### Voice details
+
+- TTS: `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}`, `model_id: "eleven_flash_v2_5"`, `audio/mpeg`, 500-char cap.
+- Voice IDs come from env. Never accept a raw ID from the client.
+- Audio cache: IndexedDB, key = SHA-256 of `text|voiceKey`.
+- Fallback: `window.speechSynthesis`.
+- Captions: Web Speech API first. Show `supported`. Typed reply always works.
+
+### Environment variables
+
+See [RESOURCES.md](RESOURCES.md) section 6 and `.env.example`.
 
 ### Deploy
-Render Web Service (Node): build `npm ci && npm run build`, start `npm start`, set env vars in the dashboard. Vercel is an acceptable alternative (no listed prize for either). Deploy a hello page in the first hour, because camera and mic only work over HTTPS. A custom domain is optional and gives no listed prize; the GoDaddy Registry domain prize needs an eligible domain (VERIFY before spending time).
+
+Render Web Service (Node) or Vercel. HTTPS is required for camera and mic. Deploy a hello page in the first hour.
 
 ---
 
-## 5. Files with exact content (opencode: create these verbatim)
+## 5. Contracts (source of truth: `src/lib/contracts.ts`)
 
-### `.env.example`
-```
-ELEVENLABS_API_KEY=
-ELEVENLABS_VOICE_WARM=
-ELEVENLABS_VOICE_CALM=
-ELEVENLABS_VOICE_ENERGETIC=
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-flash-latest
-N8N_HELP_WEBHOOK_URL=
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
-
-### `src/lib/contracts.ts`
 ```ts
-export type ScenarioId = 'pharmacy' | 'restaurant' | 'transit' | 'frontdesk' | 'general';
+export type ContextId = 'pharmacy' | 'restaurant' | 'transit' | 'frontdesk' | 'general';
 export type VoiceKey = 'warm' | 'calm' | 'energetic';
 export type ThemeId = 'dark-neon' | 'high-contrast' | 'light';
-export type GestureSource = 'builtin' | 'custom' | 'sequence';
 
 export type Candidate = { label: string; confidence: number };
 
-export type Phrase = {
-  id: string;
-  label: string;
-  text: string;
-  scenario?: ScenarioId;
+export type SignCapture = {
+  context: ContextId;
+  frames: number;
+  durationMs: number;
+  candidates: Candidate[];
+  summary?: number[];
 };
 
-export type GestureEvent = {
-  phraseId: string | null;
-  label: string;
+export type GistResponse = {
+  gist: string;
+  uncertain: boolean;
   confidence: number;
-  alternatives: Candidate[];
-  source: GestureSource;
+  alternatives: string[];
+  note: string;
+};
+
+export type ConversationTurn = {
+  id: string;
+  role: 'signer' | 'listener';
+  text: string;
+  source: 'ai' | 'speech' | 'typed';
+  uncertain?: boolean;
+  confidence?: number;
   at: number;
 };
-
-export type SpeakRequest = { text: string; voice: VoiceKey };
-
-export type GistRequest = { scenario: ScenarioId; candidates: Candidate[][] };
-export type GistResponse = { gist: string; uncertain: boolean; note: string };
-
-export type Settings = {
-  theme: ThemeId;
-  textScale: number;
-  dwellMs: number;
-  reducedMotion: boolean;
-  voice: VoiceKey;
-  scenario: ScenarioId;
-};
-
-export const DEFAULT_SETTINGS: Settings = {
-  theme: 'dark-neon',
-  textScale: 1,
-  dwellMs: 900,
-  reducedMotion: false,
-  voice: 'warm',
-  scenario: 'pharmacy',
-};
 ```
 
-### `src/lib/schemas.ts`
-zod schemas mirroring `SpeakRequest`, `GistRequest`, `GistResponse` (text 1 to 500 chars; candidate confidence 0 to 1; at most 8 phrases of at most 6 candidates each).
-
-### `src/lib/starter-phrases.ts`
-```ts
-export const STARTER_PHRASES: Record<string, string> = {
-  Open_Palm: 'Hello.',
-  Thumb_Up: 'Yes.',
-  Thumb_Down: 'No.',
-  Closed_Fist: 'Please wait.',
-  Pointing_Up: 'I have a question.',
-  Victory: 'Thank you.',
-  ILoveYou: 'I need help.',
-};
-```
+The old `Phrase`, `Sentence`, `GestureEvent`, and starter-gesture contracts are removed.
 
 ---
 
@@ -224,163 +188,121 @@ export const STARTER_PHRASES: Record<string, string> = {
 
 ```
 airsign/
-  docs/
-    SPEC.md              (this file)
-    GIST_PROMPT.md       (section 10)
-    RESEARCH.md          (section 9 checklist with notes)
-    CONTRIBUTING.md      (section 8 workflow)
-  public/
-    models/              (gesture_recognizer.task, downloaded by script)
-    mediapipe/wasm/      (copied by script)
-  scripts/
-    setup-assets.mjs     (copies wasm, downloads the model, idempotent)
+  docs/            SPEC, RESOURCES, ARCHITECTURE, DESIGN, ROADMAP, RESEARCH, GIST_PROMPT, tasks/
+  public/          models/, mediapipe/wasm/
+  scripts/         setup-assets.mjs
   src/
     app/
-      layout.tsx  page.tsx  globals.css
-      api/
-        speak/route.ts
-        gist/route.ts
-        scribe-token/route.ts
-        help-alert/route.ts      (stub returning 501 until n8n is wired)
-    engine/                      (P1)
-      camera.ts  recognizer.worker.ts  normalize.ts  knn.ts  hold.ts  useGestures.ts
-    voice/                       (P2)
-      useSpeak.ts  useCaptions.ts  audio-cache.ts
-    components/                  (P3)
-      CameraPanel.tsx  HoldRing.tsx  SentenceStrip.tsx  GistCard.tsx
-      Captions.tsx  SettingsBar.tsx  ScenarioPicker.tsx  Waveform.tsx
-    lib/
-      contracts.ts  schemas.ts  starter-phrases.ts  storage.ts
-  .env.example  .gitignore  package.json  tsconfig.json  README.md
+      page.tsx                 landing
+      app/page.tsx             conversation workspace
+      api/gist/route.ts        Gemini
+      api/speak/route.ts       ElevenLabs
+      api/scribe-token/route.ts
+    components/
+      landing/                 hero, conversation preview, pipeline demo, sections
+      app/                     conversation stage, transcript, gist confirm, reply bar
+      mocks/                   SignCamera, useSpeak, useCaptions
+      motion/                  Reveal, TiltCard, Parallax, Magnetic
+      ui/                      shadcn primitives
+    engine/                    P1: camera, landmarks, normalize, capture
+    voice/                     P2: speak, captions, cache
+    lib/                       contracts, contexts, ports, gist, storage, flags
 ```
 
 ---
 
-## 7. TASK FOR OPENCODE: bootstrap and initial commit
+## 7. Task for the bootstrap agent (already completed)
 
-Do the following in order. Stop and report if a step fails. Never print or commit secrets.
-
-1. Scaffold: run `npx create-next-app@latest airsign` non-interactively with TypeScript, Tailwind, ESLint, App Router, `src/` directory, import alias `@/*`, npm. Adjust flags to the installed version. Work inside the created folder.
-2. Install runtime deps: `@mediapipe/tasks-vision @elevenlabs/react @google/genai idb-keyval zod lucide-react`.
-3. Install dev deps: `vitest @vitest/coverage-v8 prettier`.
-4. Initialize shadcn/ui (`npx shadcn@latest init`) and add: button, card, slider, switch, select, badge, progress, tooltip, sonner.
-5. Create every file and folder in section 6. Use the exact content in section 5 for `.env.example`, `contracts.ts`, `starter-phrases.ts`. Write `schemas.ts` as described.
-6. Implement real, compiling versions (no TODO comments, no lorem ipsum) of:
-   - `normalize.ts` (landmark normalization per section 4) and `knn.ts` (k = 5, rejection threshold) with vitest tests.
-   - `hold.ts` (majority vote over 8 frames, dwell timer, cooldown) with vitest tests.
-   - `/api/speak` (validate with zod, call ElevenLabs TTS with `eleven_flash_v2_5`, return `audio/mpeg`, clear JSON errors, input cap 500 chars).
-   - `/api/gist` (validate, call Gemini with the prompt in `docs/GIST_PROMPT.md`, JSON output, 5 s timeout, fallback described in section 4).
-   - `/api/scribe-token`: implement per current ElevenLabs docs; if the correct endpoint cannot be confirmed, return 501 with a clear message and document it in `docs/RESEARCH.md`.
-   - `/api/help-alert`: return 501 until wired.
-   - `audio-cache.ts` and `storage.ts` using `idb-keyval`.
-7. Create a minimal `page.tsx` shell (split layout: camera panel on the left, sentence strip, gist card, captions on the right, settings bar on top) with placeholder-free, accessible markup. UI strings must follow the honesty rules in section 1.
-8. Write `scripts/setup-assets.mjs` (copy wasm from `node_modules/@mediapipe/tasks-vision/wasm` to `public/mediapipe/wasm`; download the gesture model to `public/models/gesture_recognizer.task` if missing; print clear messages). Add npm scripts: `dev`, `build`, `start`, `lint`, `typecheck` (`tsc --noEmit`), `test` (`vitest run`), `setup:assets`.
-9. Write `.gitignore` additions: `.env*` (keep `.env.example`), `.docdex/`, `public/models/*.task`, `public/mediapipe/`, `node_modules`, `.next`.
-10. Write `README.md`: what AirSign is (using the honest wording), quick start (`npm i`, copy `.env.example` to `.env.local`, `npm run setup:assets`, `npm run dev`), env vars, scripts, folder map, team lanes, and a short "limits and honesty" section.
-11. Write `docs/CONTRIBUTING.md` from section 8 and `docs/RESEARCH.md` from section 9. Save this whole file as `docs/SPEC.md`. Write `docs/GIST_PROMPT.md` from section 10.
-12. Verify: run `npm run typecheck && npm run lint && npm run test && npm run build`. Fix everything until all pass.
-13. Git: `git init` (if needed), `git add -A`, confirm no `.env.local` or keys are staged, then commit on `main` with the message `chore: scaffold AirSign (Next.js, contracts, API routes, docs)`.
-14. Create local branches from that commit: `p1/engine`, `p2/voice-api`, `p3/ui`, `p4/integrations`. Do not push. Print the exact commands the human should run to add the remote and push all branches.
-15. Final report: list created files, test results, anything that is a stub (501 routes), and any VERIFY item you could not resolve.
+The scaffold, dependencies, design system, contracts, mocks, landing, and `/app` shell are built. What remains is the real engine, API, and voice work described in `docs/tasks/`.
 
 ---
 
 ## 8. Team lanes and workflow
 
-Lanes:
-- P1 Engine: `src/engine/*`. Camera, worker, skeleton overlay, hold ring logic, teach-a-gesture, then Phase 3 sign matcher.
-- P2 Voice/API: `src/app/api/*`, `src/voice/*`. TTS, Scribe captions, Gemini gist, audio cache, fallbacks.
-- P3 UI/Design: `src/components/*`, `page.tsx`, themes, accessibility, Figma frames.
-- P4 Integrations/Ship: DeepSpace spike, n8n flow, deploy, README, Devpost text, demo video.
+- **P1 Engine:** `src/engine/*`, `src/components/mocks/sign-camera.tsx` → real. Camera, HandLandmarker, landmark overlay, capture buffer, normalization.
+- **P2 Voice/API:** `src/app/api/*`, `src/voice/*`. Gemini gist, ElevenLabs TTS, captions, cache, fallbacks.
+- **P3 UI/Design:** `src/app/page.tsx`, `layout.tsx`, `globals.css`, `src/components/*`, ports, storage. Conversation UI, transcript, settings, landing, accessibility.
+- **P4 Integrations/Ship:** docs, deploy, research, demo video, Devpost.
 
 Git rules:
-- Trunk-based. Short-lived branches per person (`p1/...`). Merge to `main` often (at least every 1 to 2 hours) after `npm run typecheck && npm run build` passes.
-- `main` must always build and deploy. Never force-push `main`. Rebase on `main` before merging.
+
+- Trunk-based. Short-lived branches per person (`p1/...`). Merge often after `npm run typecheck && npm run build`.
+- `main` always builds and deploys. Never force-push `main`.
 - Commit style: `feat(engine): ...`, `fix(ui): ...`, `chore: ...`.
-- Shared types change only in `src/lib/contracts.ts`, announced to the team first.
+- Shared types change only in `src/lib/contracts.ts`, announced first.
 - Secrets live only in `.env.local` and the deploy dashboard.
 
-Schedule (counted from your start; adjust once you know the hours left):
-- 0 to 0.5h: bootstrap commit, everyone clones, env keys, pick the demo scenario.
-- 0.5 to 1.5h spikes: P1 camera plus landmarks on screen; P2 `/api/speak` plays "hello" in the browser; P3 Figma frames and shell; P4 DeepSpace spike plus deploy hello page.
-- 1.5h gate: if a spike fails, drop that item (DeepSpace first) and continue.
-- By ~6h: Phase 1 works end to end.
-- By ~10h: Phase 2.
+Schedule:
+
+- 0–0.5h: clone, keys, pick the demo context.
+- 0.5–1.5h spikes: P1 landmarks on screen; P2 `/api/gist` returns a sentence; P3 shell; P4 deploy hello page.
+- 1.5h gate: if a spike fails, drop it and continue.
+- By ~6h: the conversation loop works end to end with mocks or real pieces.
+- By ~10h: real camera + Gemini + voice.
 - Sleep. Tired demos fail.
-- Morning: at most one Phase 3 item.
+- Morning: at most one stretch item.
 - T-3h: FEATURE FREEZE.
-- T-3h to T-1h: test on two devices, record backup demo video, finish Devpost, README, Figma link.
+- T-3h to T-1h: two-device test, backup video, Devpost, README, Figma link.
 - T-1h: submit.
 
-Cut order if behind: two-phone room, then n8n, then Phase 3 sign matcher, then Scribe (keep Web Speech fallback). Never cut: confirm-before-speak, button fallbacks, themes, the backup video.
+Cut order if behind: Scribe → two-phone room → n8n → still-frame sharing. Never cut: confirm-before-speak, typed fallback, themes, the backup video.
 
 ---
 
-## 9. Research checklist (each person verifies and records answers in `docs/RESEARCH.md`)
+## 9. Research checklist
 
-- R1 (P2) ElevenLabs: browser-safe token flow for Scribe Realtime; `eleven_flash_v2_5` request options; free-tier credit limits; pick 3 voice IDs; confirm `useScribe` setup in `@elevenlabs/react`.
-- R2 (P1) MediaPipe: GestureRecognizer in a worker inside Next.js versus main thread; GPU delegate; frame rate on the demo laptop; lighting tests in the actual venue.
-- R3 (P2) Gemini: exact current free Flash model ID in AI Studio; structured JSON output parameters in `@google/genai`; rate limits.
-- R4 (P4) DeepSpace (docs.deep.space): can it hold server-side secrets or run a route calling ElevenLabs? Realtime records? Deploy URL? Decide go/no-go with evidence.
-- R5 (P4) n8n Cloud: webhook trigger plus email or chat node; how to demo reliably without SMS setup.
-- R6 (P3) Accessibility: axe or Lighthouse checks, ARIA live region behaviour for captions, contrast checks for all three themes, Atkinson Hyperlegible via `next/font/google`.
-- R7 (P4) Deploy: Render versus Vercel, HTTPS camera and mic test on two devices, env var setup.
-- R8 (all) Browser support: test Web Speech API fallback and camera permissions on Chrome and one other browser.
-- R9 (Phase 3 only) Sign vocabulary: confirm each sign from reliable sources or a signer; check any public dataset license before using it. Do not demo signs we cannot verify.
+See [RESEARCH.md](RESEARCH.md). Every VERIFY item belongs there until confirmed.
 
 ---
 
-## 10. Gist prompt (`docs/GIST_PROMPT.md`, the actual product prompt for Gemini)
+## 10. Gist prompt
 
-```
-You help a person communicate. You receive a scenario and a list of recognizer candidates for each sign or gesture, each with a confidence from 0 to 1.
-Write ONE short, polite, first-person sentence the person most likely means.
-Rules: use only the candidates; never add facts, names, numbers or medical details. If any needed candidate has confidence below 0.6, or candidates conflict, set uncertain=true and list the alternatives in note. Output JSON only: {"gist": string, "uncertain": boolean, "note": string}.
-```
-
-The UI always labels the result "AI guess, please confirm" and shows the raw candidates beside it.
+See [GIST_PROMPT.md](GIST_PROMPT.md). It is the actual product prompt for Gemini and must stay cautious.
 
 ---
 
 ## 11. Accessibility requirements (also our pitch)
 
 - Fully usable without gestures: every action has a button and a keyboard shortcut.
-- Captions panel uses `aria-live="polite"`, large type, high contrast.
-- Text contrast at least 4.5:1 in all three themes. Glow effects only on non-text elements.
+- The transcript and reply captions use `aria-live="polite"`, large type, high contrast.
+- Text contrast at least 4.5:1 in all three themes. Glow only on non-text elements.
 - Respect `prefers-reduced-motion` and offer a manual toggle.
-- Adjustable dwell time and text size. Visible focus states. No information conveyed by colour alone.
-- Run axe or Lighthouse and fix issues before submitting. Describe what we did in the Devpost accessibility paragraph. Do not claim more than we tested.
+- Adjustable text size and capture length. Visible focus states. No information by colour alone.
+- Run axe or Lighthouse and fix issues before submitting. Describe what we did. Do not claim more than we tested.
 
 ---
 
 ## 12. Demo, pitch, and submission
 
-Visual direction: near-black background, cyan or teal skeleton glow, amber reserved for "AI guess / uncertain", giant captions, animated waveform while speaking, hold ring that fills smoothly. Polish empty, loading and error states.
+Visual direction: near-black background, cyan landmark glow, amber for "AI gist / uncertain", giant gist text, waveform while speaking, a transcript that reads like a conversation.
 
 3-minute demo script:
-1. Problem in one concrete scenario (20s).
-2. Starter gestures to a spoken sentence, live (30s).
-3. Teach a new gesture on the spot (30s).
-4. Hearing person replies by voice, captions appear (20s).
-5. Gist mode with visible uncertainty, only if built (30s).
-6. Themes, keyboard use, "video never leaves your device" (20s).
-7. Impact, honest limits, next step: co-design with Deaf users (30s).
+
+1. Problem in one concrete scene: a counter, no interpreter, typing is too slow (20 s).
+2. Live: point the camera, capture a short sign burst, gist appears with "AI gist — please confirm" (40 s).
+3. Confirm → the voice speaks it (20 s).
+4. The hearing person replies; large captions appear on the same transcript (25 s).
+5. Low-confidence state: "Not sure" plus alternatives (20 s).
+6. Themes, keyboard-only operation, video stays on-device (25 s).
+7. Impact, honest limits, next step: co-design with Deaf users (30 s).
 
 Record a backup video of everything before the freeze.
 
 Submission checklist:
+
 - GitHub repo link, Figma link, video of 4 minutes or less.
-- Problem statement and solution description, impact statement, accessibility considerations paragraph, honest limitations.
-- One short paragraph per prize opted into: how we used ElevenLabs, Gemini, and (only if real) DeepSpace and n8n.
-- Opt in on each prize on Devpost and meet each prize's extra requirement.
+- Problem statement, solution, impact, accessibility paragraph, honest limitations.
+- One short paragraph per prize opted into.
+- Opt in on each prize and meet its extra requirement.
 
 ---
 
 ## 13. Top risks
 
-- Camera or lighting fails at the venue: test early, keep the backup video, keep button fallbacks.
-- Wrong gestures fire: threshold plus majority vote plus cooldown; show confidence.
-- API or Wi-Fi limits: cached audio, browser speech fallback, self-hosted MediaPipe files.
-- Mic permissions block reply mode: test on the demo device; keep a typed reply option.
-- Overbuilding: only Phase 1 is required. Everything else is a bonus.
-- Overclaiming: a wrong or overhyped claim in front of a judge who knows sign language costs more than any missing feature.
+- Camera or lighting fails at the venue: test early, keep the backup video, keep the typed fallback.
+- Gemini rate-limits or times out: 5 s fallback, model ID in env, cache nothing sensitive.
+- MediaPipe in a worker is fiddly: main thread first, every second frame, 45-minute cap.
+- Wrong gist: always show confidence, alternatives, and the confirm gate.
+- Mic permissions block reply mode: typed reply always works.
+- Overbuilding: the conversation loop is the only required scope.
+- Overclaiming: a wrong claim in front of a judge who signs costs more than any missing feature.
