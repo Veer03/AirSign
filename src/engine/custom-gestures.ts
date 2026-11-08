@@ -45,6 +45,16 @@ export function detectCustomGesture(
     return { gesture: "Finger_Heart", confidence: 0.9 };
   }
 
+  // A finger gun extends the index and thumb while the middle, ring, and pinky
+  // stay curled. Keep the thumb away from the index tip so it does not collide
+  // with the finger-heart pinch, and require clear thumb extension from the
+  // wrist/palm to separate it from a plain pointing pose.
+  const indexExtended = index > 1.2;
+  const thumbExtended = dist2d(wrist, landmarks[4]) / Math.max(palmLength, 1e-6) > 0.95;
+  if (indexExtended && thumbExtended && pinch > 0.55 && middle < 1.05 && ring < 1.05 && pinky < 1.05) {
+    return { gesture: "Gun", confidence: 0.9 };
+  }
+
   const middleExtended = middle > 1.2;
   const othersCurled = index < 1.05 && ring < 1.05 && pinky < 1.05;
   if (!middleExtended || !othersCurled) return null;
