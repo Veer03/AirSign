@@ -55,7 +55,7 @@ export function PracticeDrill({
     <PixelPanel className="p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="label">Practice drill</p>
+          <p className="label label-title">Practice drill</p>
           <h2 className="mt-1 text-base font-medium">Sign the highlighted key</h2>
         </div>
         <button
@@ -98,9 +98,9 @@ export function PracticeDrill({
         )}
       </div>
 
-      <p className="label mt-4 !text-[9px]">letters</p>
+      <p className="label label-title mt-4 !text-[9px]">letters</p>
       <div className="mt-1.5 grid grid-cols-7 gap-1">{PRACTICE_LETTERS.map(key)}</div>
-      <p className="label mt-3 !text-[9px]">numbers</p>
+      <p className="label label-title mt-3 !text-[9px]">numbers</p>
       <div className="mt-1.5 grid grid-cols-5 gap-1">{PRACTICE_NUMBERS.map(key)}</div>
     </PixelPanel>
   );

@@ -19,7 +19,7 @@ export const STARTER_PHRASES: Phrase[] = [
   { id: "pointing-up", gesture: "Pointing_Up", label: "Pointing up", text: "One moment please" },
   { id: "love-you", gesture: "ILoveYou", label: "I love you", text: "Thank you" },
   { id: "middle-finger", gesture: "Middle_Finger", label: "Middle finger", text: "Fuck you" },
-  { id: "finger-heart", gesture: "Finger_Heart", label: "Finger heart", text: "I love you" },
+  { id: "finger-heart", gesture: "Finger_Heart", label: "Finger heart", text: "사랑해요" },
 ];
 
 const byGesture = new Map<GestureId, Phrase>(

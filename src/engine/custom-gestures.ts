@@ -1,5 +1,6 @@
 import type { GestureId } from "@/lib/contracts";
 import type { Landmark } from "./landmarks";
+import { clarity, poseConfidence } from "./pose-confidence";
 
 export type CustomGesture = {
   gesture: GestureId;
@@ -31,7 +32,17 @@ export function detectCustomGesture(
   const palmLength = dist2d(wrist, landmarks[9]);
   const pinch = palmLength > 1e-6 ? dist2d(landmarks[4], landmarks[8]) / palmLength : 1;
   const wowPose = pinch < 0.65 && middle > 1.1 && ring > 1.1 && pinky > 1.1;
-  if (wowPose) return { gesture: "Wow", confidence: 0.9 };
+  if (wowPose) {
+    return {
+      gesture: "Wow",
+      confidence: poseConfidence([
+        clarity(pinch, 0.65, 0.3),
+        clarity(middle, 1.1, 1.4),
+        clarity(ring, 1.1, 1.4),
+        clarity(pinky, 1.1, 1.4),
+      ]),
+    };
+  }
 
   // A Korean finger heart pinches the index fingertip against the thumb while
   // the other three fingers stay curled. Normalize the pinch to palm length
@@ -42,7 +53,16 @@ export function detectCustomGesture(
   const indexOutFromPalm = index > 0.9;
   const otherFingersCurled = middle < 1.2 && ring < 1.2 && pinky < 1.2;
   if (pinch < 0.75 && indexOutFromPalm && otherFingersCurled) {
-    return { gesture: "Finger_Heart", confidence: 0.9 };
+    return {
+      gesture: "Finger_Heart",
+      confidence: poseConfidence([
+        clarity(pinch, 0.75, 0.35),
+        clarity(index, 0.9, 1.1),
+        clarity(middle, 1.2, 0.95),
+        clarity(ring, 1.2, 0.95),
+        clarity(pinky, 1.2, 0.95),
+      ]),
+    };
   }
 
   const middleExtended = middle > 1.2;
@@ -52,12 +72,23 @@ export function detectCustomGesture(
   // Guard against a sloppy victory/point where another fingertip is actually
   // farther from the wrist than the middle one.
   const middleTip = dist2d(wrist, landmarks[12]);
-  const longest =
-    middleTip > dist2d(wrist, landmarks[8]) * 1.1 &&
-    middleTip > dist2d(wrist, landmarks[16]) * 1.1 &&
-    middleTip > dist2d(wrist, landmarks[20]) * 1.1;
+  const lead = Math.min(
+    ...[8, 16, 20].map((tip) => {
+      const other = dist2d(wrist, landmarks[tip]);
+      return other > 1e-6 ? middleTip / other : Infinity;
+    }),
+  );
 
-  if (!longest) return null;
+  if (!(lead > 1.1)) return null;
 
-  return { gesture: "Middle_Finger", confidence: 0.9 };
+  return {
+    gesture: "Middle_Finger",
+    confidence: poseConfidence([
+      clarity(middle, 1.2, 1.5),
+      clarity(index, 1.05, 0.9),
+      clarity(ring, 1.05, 0.9),
+      clarity(pinky, 1.05, 0.9),
+      clarity(lead, 1.1, 1.35),
+    ]),
+  };
 }

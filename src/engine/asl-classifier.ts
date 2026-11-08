@@ -53,10 +53,12 @@ async function createClassifier(): Promise<Classifier> {
         .sort((a, b) => probs[b] - probs[a])
         .slice(0, 3)
         .map((index) => ({ gloss: labels[index] ?? `#${index}`, probability: probs[index] }));
-      console.info(
-        `[asl] T=${frames.length} ${(performance.now() - started).toFixed(0)}ms`,
-        top.map((guess) => `${guess.gloss} ${(guess.probability * 100).toFixed(0)}%`).join(" | "),
-      );
+      if (typeof window !== "undefined" && window.location.search.includes("debugAsl=1")) {
+        console.info(
+          `[asl] T=${frames.length} ${(performance.now() - started).toFixed(0)}ms`,
+          top.map((guess) => `${guess.gloss} ${(guess.probability * 100).toFixed(0)}%`).join(" | "),
+        );
+      }
       return top;
     },
   };

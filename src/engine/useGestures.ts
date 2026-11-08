@@ -23,7 +23,7 @@ import { getPretrainedAlphabetClassifier } from "./asl-alphabet-pretrained";
 /** Which letter classifier alphabet mode uses. Both share classify(points, side). */
 export type AlphabetModel = "knn" | "pretrained";
 type AlphabetClassifier = Pick<ASLAlphabetClassifier, "classify">;
-import { classifyASLNumber } from "./asl-numbers";
+import { classifyASLNumberWithConfidence } from "./asl-numbers";
 
 export type SignLock = {
   id: string;
@@ -387,9 +387,9 @@ export function useGestures(options: UseGesturesOptions) {
 
             const frame = detect(recognizer, video, now);
             const tracked = trackerRef.current.update(frame.hands, now);
-            // Special poses (Wow / finger heart / middle finger) override letters
-            // in Harshpal's kNN alphabet only; the pretrained tab stays letters-only.
-            const specialPoses = !alphabetModeRef.current || alphabetModelRef.current === "knn";
+            // Alphabet mode is strictly A–Z for both classifiers. Special poses
+            // are available in the general starter mode only.
+            const specialPoses = !alphabetModeRef.current;
             const specialHands = (gesture: string) =>
               specialPoses
                 ? tracked.filter((hand) => hand.gesture === gesture && hand.confidence >= 0.5)
@@ -439,8 +439,9 @@ export function useGestures(options: UseGesturesOptions) {
               sign = signRecognizerRef.current.recognize([landmarkFrame]);
             } else if (numberModeRef.current) {
               const hand = usable[0];
-              const number = classifyASLNumber(hand?.landmarks ?? null);
-              sign = number
+              const numberResult = classifyASLNumberWithConfidence(hand?.landmarks ?? null);
+              const number = numberResult?.value;
+              sign = numberResult
                 ? {
                     id: `asl-number-${number}`,
                     label: String(number),
@@ -448,7 +449,7 @@ export function useGestures(options: UseGesturesOptions) {
                     gesture: `ASL_NUMBER_${number}` as GestureId,
                     hands: 1,
                     side: hand?.side,
-                    confidence: 0.82,
+                    confidence: numberResult.confidence,
                     model: "asl-number-landmarks",
                   }
                 : null;

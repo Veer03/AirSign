@@ -261,7 +261,7 @@ function CameraSurface({
           <div className="order-first flex w-full flex-wrap gap-2 sm:order-none" aria-label="Recognition modes">
             {MODE_GROUPS.map((group) => (
               <div key={group.label} className="flex min-w-0 items-center border border-white/25" role="group" aria-label={group.label}>
-                <span className="label shrink-0 px-2 !text-[8px]">{group.label}</span>
+                <span className="label label-title shrink-0 px-2 !text-[8px]">{group.label}</span>
                 {group.modes.map((value) => (
                   <button
                     key={value}
@@ -281,7 +281,7 @@ function CameraSurface({
           </div>
           {alphabetMode ? (
             <div className="flex items-center gap-2 border border-white/20 px-2 py-1" role="group" aria-label="A–Z classifier">
-              <span className="label !text-[8px]">A–Z model</span>
+              <span className="label label-title !text-[8px]">A–Z model</span>
               {(["knn", "pretrained"] as const).map((model) => (
                 <button
                   key={model}

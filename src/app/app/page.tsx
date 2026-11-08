@@ -9,6 +9,7 @@ import { makeGestureEvent, phraseForGesture, phraseForKey, STARTER_PHRASES } fro
 import { loadSettings, saveSettings } from "@/lib/storage";
 import { useSpeak } from "@/voice/useSpeak";
 import { CameraPanel } from "@/components/CameraPanel";
+import { Logo } from "@/components/Logo";
 import { PixelBackdrop } from "@/components/PixelBackdrop";
 import { PixelPanel } from "@/components/PixelPanel";
 import { SentenceStrip } from "@/components/SentenceStrip";
@@ -173,25 +174,24 @@ export default function WorkspacePage() {
       <header className="sticky top-0 z-30 border-b border-white/70 bg-black/90">
         <div className="mx-auto flex h-[52px] max-w-[1500px] items-center justify-between gap-2 px-3 sm:gap-3 sm:px-4">
           <div className="flex items-center gap-4">
-            <Link href="/" className="flex items-center gap-2.5">
-              <span className="h-3 w-3 bg-accent" />
-              <span className="font-mono text-sm font-medium uppercase tracking-[0.22em]">AirSign</span>
+            <Link href="/" aria-label="AirSign home">
+              <Logo />
             </Link>
             <span className="hidden h-4 w-px bg-white/25 sm:block" />
             <Link
               href="/"
-              className="label hidden items-center gap-1 transition hover:text-white sm:flex"
+              className="label hidden items-center gap-1 !text-accent transition hover:!text-white sm:flex"
             >
               <ArrowLeft className="h-3 w-3" /> home
             </Link>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <span className="label hidden md:block">
+            <span className="label label-title hidden md:block">
               {alphabetMode
                 ? "ASL alphabet + Wow sign"
                 : numberMode
-                  ? "ASL numbers 1–10"
+                  ? "ASL numbers 0–10"
                   : wordsMode
                     ? "ASL word recognition · 250 signs"
                     : "starter gestures · not sign language"}
@@ -340,7 +340,7 @@ export default function WorkspacePage() {
             <>
               <PixelPanel className="p-5">
                 <div className="flex items-center justify-between">
-                  <span className="label">last locked phrase</span>
+                  <span className="label label-title">last locked phrase</span>
                   <span className="label uppercase">
                     {last
                       ? `${last.source} · ${

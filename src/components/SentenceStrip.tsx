@@ -26,7 +26,7 @@ export function SentenceStrip({
   return (
     <PixelPanel className="flex min-h-[15rem] flex-col">
       <div className="flex items-center justify-between border-b border-white/15 px-4 py-2.5">
-        <span className="label">sentence</span>
+        <span className="label label-title">sentence</span>
         <span className="label">{chips.length} locked</span>
       </div>
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Camera, Hand, Lock, ShieldCheck, Volume2 } from "lucide-react";
 import { CursorGlow } from "@/components/CursorGlow";
 import { LiveDemoPanel } from "@/components/LiveDemoPanel";
+import { Logo } from "@/components/Logo";
 import { Marquee } from "@/components/Marquee";
 import { PixelBackdrop } from "@/components/PixelBackdrop";
 import { PixelPanel } from "@/components/PixelPanel";
@@ -75,9 +76,8 @@ export default function LandingPage() {
 
       <header className="sticky top-0 z-30 border-b border-white/70 bg-black/90 backdrop-blur">
         <div className="mx-auto flex h-[52px] max-w-[1500px] items-center justify-between px-4">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="h-3 w-3 bg-accent" />
-            <span className="font-mono text-sm font-medium uppercase tracking-[0.22em]">AirSign</span>
+          <Link href="/" aria-label="AirSign home">
+            <Logo />
           </Link>
           <nav className="flex items-center gap-5">
             <a href="#how" className="label nav-link hidden transition hover:text-white sm:block">
@@ -176,7 +176,7 @@ export default function LandingPage() {
         <section id="how" className="border-t border-white/15 py-16">
           <Reveal className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <h2 className="text-3xl font-medium tracking-tight sm:text-4xl">Three beats, one phrase.</h2>
-            <p className="label">01 — how it works</p>
+            <p className="label label-title">01 — how it works</p>
           </Reveal>
 
           <div className="grid gap-4 md:grid-cols-3">
@@ -200,7 +200,7 @@ export default function LandingPage() {
             <h2 className="text-3xl font-medium tracking-tight sm:text-4xl">
               Fast where it matters.
             </h2>
-            <p className="label">02 — engineering</p>
+            <p className="label label-title">02 — engineering</p>
           </Reveal>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -224,7 +224,7 @@ export default function LandingPage() {
         <section id="honesty" className="border-t border-white/15 py-16">
           <div className="grid gap-8 lg:grid-cols-12">
             <Reveal className="lg:col-span-5">
-              <p className="label mb-4">03 — limits</p>
+              <p className="label label-title mb-4">03 — limits</p>
               <h2 className="text-3xl font-medium tracking-tight sm:text-4xl">
                 Honest by design.
               </h2>

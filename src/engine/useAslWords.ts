@@ -13,18 +13,22 @@ import { HAND_CONNECTIONS } from "./landmarks";
  * "ASL words" mode: MediaPipe Holistic + the Kaggle asl-signs classifier.
  *
  * Always recording: a sliding window of the last ~1.5 s is classified every
- * ~0.4 s while hands are visible. A word is added when it is confident AND the same
- * top-1 shows up in two inferences in a row; then the window is cleared.
+ * ~0.25 s while hands are visible. A word is added when it appears in the top
+ * two across multiple recent inferences, including at least one top-1 result;
+ * then the window is cleared.
  */
 
-/** Top-1 probability needed (twice in a row) before a word is added. */
-export const CONTINUOUS_THRESHOLD = 0.55;
-const MIN_FRAMES = 8;
+/** Evidence floor: require both repeated support and at least one clear-ish hit. */
+const MIN_SUPPORT_AVERAGE = 0.22;
+const MIN_SUPPORT_PEAK = 0.28;
+const MIN_FRAMES = 6;
 const MAX_FRAMES = 120;
 const WINDOW_MS = 1500;
-const INFER_EVERY_MS = 400;
+const INFER_EVERY_MS = 250;
+const EVIDENCE_COUNT = 3;
 const REPEAT_BLOCK_MS = 2500;
 const HANDS_GONE_RESET_MS = 600;
+const SMOOTH_WEIGHTS = [0.2, 0.3, 0.5];
 
 export type AslRuntime = {
   state: GestureState;
@@ -46,6 +50,67 @@ export type UseAslWordsOptions = {
 };
 
 type TimedFrame = { t: number; frame: Float32Array };
+type CandidateEvidence = { guesses: WordGuess[] };
+
+function smoothGuesses(history: WordGuess[][]): WordGuess[] {
+  const weights = SMOOTH_WEIGHTS.slice(SMOOTH_WEIGHTS.length - history.length);
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const scores = new Map<string, number>();
+
+  history.forEach((guesses, historyIndex) => {
+    const weight = weights[historyIndex];
+    for (const guess of guesses) {
+      scores.set(guess.gloss, (scores.get(guess.gloss) ?? 0) + guess.probability * weight);
+    }
+  });
+
+  return [...scores]
+    .map(([gloss, score]) => ({ gloss, probability: score / totalWeight }))
+    .sort((a, b) => b.probability - a.probability)
+    .slice(0, 3);
+}
+
+function confirmCandidate(evidence: CandidateEvidence[]) {
+  const counts = new Map<string, { count: number; topCount: number; totalProbability: number; peak: number; lastIndex: number }>();
+  evidence.forEach(({ guesses }, index) => {
+    // A genuine sign can move between rank 1 and 2 as the signer forms it.
+    // Count only the top two, and keep the one-frame peak as an anti-noise check.
+    guesses.slice(0, 2).forEach((guess, rank) => {
+      const current = counts.get(guess.gloss) ?? {
+        count: 0,
+        topCount: 0,
+        totalProbability: 0,
+        peak: 0,
+        lastIndex: -1,
+      };
+      current.count += 1;
+      if (rank === 0) current.topCount += 1;
+      current.totalProbability += guess.probability;
+      current.peak = Math.max(current.peak, guess.probability);
+      current.lastIndex = index;
+      counts.set(guess.gloss, current);
+    });
+  });
+
+  const winner = [...counts.entries()]
+    .filter(([, result]) => {
+      const average = result.totalProbability / result.count;
+      return result.count >= 2 && result.topCount >= 1 &&
+        average >= MIN_SUPPORT_AVERAGE && result.peak >= MIN_SUPPORT_PEAK;
+    })
+    .sort((a, b) =>
+      b[1].count - a[1].count ||
+      b[1].topCount - a[1].topCount ||
+      b[1].totalProbability / b[1].count - a[1].totalProbability / a[1].count ||
+      b[1].lastIndex - a[1].lastIndex,
+    )[0];
+  if (!winner) return null;
+  const [gloss, result] = winner;
+  return {
+    gloss,
+    probability: result.totalProbability / result.count,
+  } satisfies WordGuess;
+}
 
 /** Debug toggles from the URL: ?mirror=1, ?swapHands=1 */
 function readFrameOptions(): FrameOptions {
@@ -135,9 +200,10 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
 
   // Sliding-window state, all in refs so the frame loop never re-renders.
   const windowRef = useRef<TimedFrame[]>([]);
+  const guessHistoryRef = useRef<WordGuess[][]>([]);
+  const evidenceRef = useRef<CandidateEvidence[]>([]);
   const lastInferRef = useRef(0);
   const lastHandAtRef = useRef(0);
-  const candidateRef = useRef<string | null>(null);
   const lastEmitRef = useRef<{ gloss: string; at: number } | null>(null);
 
   useEffect(() => {
@@ -150,7 +216,8 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
 
   const resetContinuous = useCallback(() => {
     windowRef.current = [];
-    candidateRef.current = null;
+    guessHistoryRef.current = [];
+    evidenceRef.current = [];
   }, []);
 
   /** One continuous-mode inference over the current sliding window. */
@@ -167,20 +234,33 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
       // was running. A stale result must never add a word or speak afterward.
       if (sessionId !== sessionRef.current) return;
       const top = guesses[0];
-      const confident = Boolean(top) && top.probability >= CONTINUOUS_THRESHOLD;
-      const stable = confident && candidateRef.current === top.gloss;
-      candidateRef.current = confident ? top.gloss : null;
+
+      guessHistoryRef.current = [...guessHistoryRef.current.slice(-(EVIDENCE_COUNT - 1)), guesses];
+      const smoothed = smoothGuesses(guessHistoryRef.current);
+      evidenceRef.current = [
+        ...evidenceRef.current.slice(-(EVIDENCE_COUNT - 1)),
+        { guesses },
+      ];
+      const confirmed = confirmCandidate(evidenceRef.current);
 
       const last = lastEmitRef.current;
-      const repeat = Boolean(last && top && last.gloss === top.gloss && performance.now() - last.at < REPEAT_BLOCK_MS);
+      const repeat = Boolean(
+        last && confirmed && last.gloss === confirmed.gloss && performance.now() - last.at < REPEAT_BLOCK_MS,
+      );
 
-      if (stable && !repeat) {
-        lastEmitRef.current = { gloss: top.gloss, at: performance.now() };
+      if (confirmed && !repeat) {
+        lastEmitRef.current = { gloss: confirmed.gloss, at: performance.now() };
         resetContinuous(); // the next word starts from a clean window
-        publish({ guesses, message: `Added “${top.gloss}”` });
-        onWordRef.current(top);
+        publish({ guesses: smoothed, message: `Added “${confirmed.gloss}”` });
+        onWordRef.current(confirmed);
+      } else if (confirmed && repeat) {
+        resetContinuous();
+        publish({ guesses: smoothed, message: "Same word just added — sign the next word." });
       } else {
-        publish({ guesses, message: confident ? `Hold on… “${top.gloss}”?` : "Watching…" });
+        publish({
+          guesses: smoothed,
+          message: top ? `Checking “${top.gloss}”…` : "Watching…",
+        });
       }
     } catch (error) {
       if (sessionId === sessionRef.current) {
@@ -196,8 +276,9 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
     const sessionId = ++sessionRef.current;
     if (!enabled) {
       windowRef.current = [];
+      guessHistoryRef.current = [];
+      evidenceRef.current = [];
       overlayHandsRef.current = { left: null, right: null };
-      candidateRef.current = null;
       lastInferRef.current = 0;
       lastHandAtRef.current = 0;
       lastEmitRef.current = null;
@@ -345,8 +426,9 @@ export function useAslWords({ enabled, videoRef, canvasRef, onWord, facing = "us
       }
       stopCamera?.();
       windowRef.current = [];
+      guessHistoryRef.current = [];
+      evidenceRef.current = [];
       overlayHandsRef.current = { left: null, right: null };
-      candidateRef.current = null;
     };
     // facing: switching front/rear restarts the camera in place.
   }, [enabled, facing, publish, videoRef, canvasRef, inferContinuous, resetContinuous]);
