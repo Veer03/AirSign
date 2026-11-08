@@ -11,16 +11,16 @@ import type {
  * as such. Labels below are MediaPipe's built-in category names.
  */
 export const STARTER_PHRASES: Phrase[] = [
-  { id: "thumbs-up", gesture: "Thumb_Up", label: "Thumbs up", text: "Thumbs up" },
-  { id: "thumbs-down", gesture: "Thumb_Down", label: "Thumbs down", text: "Thumbs down" },
-  { id: "victory", gesture: "Victory", label: "Victory", text: "Yes, that one" },
-  { id: "open-palm", gesture: "Open_Palm", label: "Open palm", text: "Please wait" },
-  { id: "closed-fist", gesture: "Closed_Fist", label: "Closed fist", text: "Stop" },
-  { id: "pointing-up", gesture: "Pointing_Up", label: "Pointing up", text: "One moment please" },
-  { id: "love-you", gesture: "ILoveYou", label: "I love you", text: "Thank you" },
-  { id: "middle-finger", gesture: "Middle_Finger", label: "Middle finger", text: "Fuck you" },
+  { id: "yes", gesture: "Thumb_Up", label: "Thumbs up", text: "Yes, I agree." },
+  { id: "no", gesture: "Thumb_Down", label: "Thumbs down", text: "No, I don't agree." },
+  { id: "ok", gesture: "Victory", label: "Victory", text: "Okay, sounds good." },
+  { id: "hello", gesture: "Open_Palm", label: "Open palm", text: "Hello." },
+  { id: "hold", gesture: "Closed_Fist", label: "Closed fist", text: "Please hold on." },
+  { id: "question", gesture: "Pointing_Up", label: "Point up", text: "I have a question." },
+  { id: "love", gesture: "ILoveYou", label: "I love you", text: "I love you." },
+  { id: "middle-finger", gesture: "Middle_Finger", label: "Middle finger", text: "That's rude." },
   { id: "finger-heart", gesture: "Finger_Heart", label: "Finger heart", text: "I love you" },
-  { id: "gun", gesture: "Gun", label: "Finger gun", text: "" },
+  { id: "wow", gesture: "Wow", label: "Wow", text: "Wow!" },
 ];
 
 const byGesture = new Map<GestureId, Phrase>(

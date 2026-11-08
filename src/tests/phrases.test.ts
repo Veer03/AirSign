@@ -11,18 +11,18 @@ describe("starter phrases", () => {
   });
 
   it("maps MediaPipe gestures to phrases", () => {
-    expect(phraseForGesture("Thumb_Up")?.text).toBe("Thumbs up");
-    expect(phraseForGesture("Middle_Finger")?.text).toBe("Fuck you");
-    expect(STARTER_PHRASES).toHaveLength(10); // 9 spoken phrases + the finger-gun sound
+    expect(phraseForGesture("Thumb_Up")?.text).toBe("Yes, I agree.");
+    expect(phraseForGesture("Middle_Finger")?.text).toBe("That's rude.");
+    expect(STARTER_PHRASES).toHaveLength(10);
   });
 
   it("builds a complete gesture event", () => {
     const phrase = STARTER_PHRASES[0];
     const event = makeGestureEvent(phrase, 0.91, "keyboard");
     expect(event.gesture).toBe("Thumb_Up");
-    expect(event.phrase).toBe("Thumbs up");
+    expect(event.phrase).toBe("Yes, I agree.");
     expect(event.confidence).toBe(0.91);
     expect(event.source).toBe("keyboard");
-    expect(event.id).toContain("thumbs-up");
+    expect(event.id).toContain("yes");
   });
 });

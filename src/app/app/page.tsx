@@ -24,10 +24,6 @@ import type { Landmark } from "@/engine/landmarks";
 import type { CameraFacing } from "@/engine/camera";
 import { useIsMobile } from "@/lib/useIsMobile";
 
-const GUN_SOUND_SRC = "/family-guy-asian-rabbit.webm";
-const GUN_SOUND_START_S = 4.2;
-const GUN_SOUND_END_S = 6.5;
-
 export default function WorkspacePage() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -88,7 +84,6 @@ export default function WorkspacePage() {
       setCustomMode(false);
     }
   }, []);
-  const gunAudioRef = useRef<HTMLAudioElement | null>(null);
   const { speak, prewarm, state: speakState, error: speakError, clearError } = useSpeak();
 
   useEffect(() => {
@@ -149,26 +144,10 @@ export default function WorkspacePage() {
   useEffect(() => {
     if (!voiceConfigured) return;
     void prewarm(
-      // The finger gun plays a sound clip instead of speech, so its text is empty.
       STARTER_PHRASES.map((phrase) => phrase.text).filter((text) => text.trim().length > 0),
       settings.voice,
     );
   }, [voiceConfigured, settings.voice, prewarm]);
-
-  useEffect(() => {
-    const audio = new Audio(GUN_SOUND_SRC);
-    audio.preload = "auto";
-    const stopAtEnd = () => {
-      if (audio.currentTime >= GUN_SOUND_END_S) audio.pause();
-    };
-    audio.addEventListener("timeupdate", stopAtEnd);
-    gunAudioRef.current = audio;
-    return () => {
-      audio.removeEventListener("timeupdate", stopAtEnd);
-      audio.pause();
-      gunAudioRef.current = null;
-    };
-  }, []);
 
   const startCustomCapture = useCallback(() => {
     if (!cameraOn) {
@@ -283,21 +262,8 @@ export default function WorkspacePage() {
     setSettings((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  const playGunSound = useCallback(() => {
-    const audio = gunAudioRef.current;
-    if (!audio) return;
-    audio.pause();
-    audio.currentTime = GUN_SOUND_START_S;
-    void audio.play().catch(() => {});
-  }, []);
-
   const handleLock = useCallback(
     (event: GestureEvent) => {
-      if (event.gesture === "Gun") {
-        playGunSound();
-        setLast(event);
-        return;
-      }
       // Practice: a camera lock on the highlighted letter/number counts as correct.
       if (event.source === "camera" && practiceTargetRef.current === event.label) {
         setPracticeCorrect(true);
@@ -308,7 +274,7 @@ export default function WorkspacePage() {
         void speak(event.phrase, settingsRef.current.voice);
       }
     },
-    [playGunSound, speak],
+    [speak],
   );
 
   useEffect(() => {

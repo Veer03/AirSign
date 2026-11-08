@@ -13,7 +13,6 @@ export type GestureId =
   | "ILoveYou"
   | "Middle_Finger"
   | "Finger_Heart"
-  | "Gun"
   | "Wow"
   | "Custom_Gesture"
   | `ASL_${"A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z"}`;

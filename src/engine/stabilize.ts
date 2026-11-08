@@ -24,7 +24,6 @@ const GESTURES = new Set<string>([
   "ILoveYou",
   "Middle_Finger",
   "Finger_Heart",
-  "Gun",
   "Wow",
   "Custom_Gesture",
   ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((letter) => `ASL_${letter}`),

@@ -419,7 +419,6 @@ export function useGestures(options: UseGesturesOptions) {
             const wowHands = specialHands("Wow");
             const fingerHeartHands = specialHands("Finger_Heart");
             const middleFingerHands = specialHands("Middle_Finger");
-            const gunHands = specialHands("Gun");
             const hasDoubleWow = twoHandsRef.current && wowHands.length >= 2;
             const hasDoubleFingerHeart = twoHandsRef.current && fingerHeartHands.length >= 2;
             const hasDoubleMiddleFinger = twoHandsRef.current && middleFingerHands.length >= 2;
@@ -429,9 +428,7 @@ export function useGestures(options: UseGesturesOptions) {
                 ? fingerHeartHands.slice(0, 2)
                 : hasDoubleMiddleFinger
                   ? middleFingerHands.slice(0, 2)
-                  : fingerHeartHands.length > 0
-                    ? fingerHeartHands.slice(0, 1)
-                    : gunHands.slice(0, 1);
+                  : fingerHeartHands.slice(0, 1);
             const useOneHand =
               numberModeRef.current ||
               (!customModeRef.current && !twoHandsRef.current) ||
