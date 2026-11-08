@@ -10,7 +10,8 @@ export type GestureId =
   | "Open_Palm"
   | "Closed_Fist"
   | "Pointing_Up"
-  | "ILoveYou";
+  | "ILoveYou"
+  | "Middle_Finger";
 
 export type GestureSource = "camera" | "keyboard" | "custom";
 

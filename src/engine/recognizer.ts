@@ -2,6 +2,7 @@
 
 import { FilesetResolver, GestureRecognizer } from "@mediapipe/tasks-vision";
 import type { HandSide } from "@/lib/contracts";
+import { detectCustomGesture } from "./custom-gestures";
 import type { Landmark } from "./landmarks";
 
 /** One hand as returned by MediaPipe for a single frame. */
@@ -91,13 +92,17 @@ export function detect(
     const landmarks = result.landmarks?.[index];
     const category = result.handedness?.[index]?.[0]?.categoryName;
 
+    const points = landmarks
+      ? landmarks.map((point) => ({ x: point.x, y: point.y, z: point.z ?? 0 }))
+      : null;
+    // Landmark heuristics cover handshapes MediaPipe's model doesn't include.
+    const custom = detectCustomGesture(points);
+
     hands.push({
       side: displaySide(category),
-      gesture: top?.categoryName ?? "None",
-      confidence: top?.score ?? 0,
-      landmarks: landmarks
-        ? landmarks.map((point) => ({ x: point.x, y: point.y, z: point.z ?? 0 }))
-        : null,
+      gesture: custom?.gesture ?? top?.categoryName ?? "None",
+      confidence: custom?.confidence ?? top?.score ?? 0,
+      landmarks: points,
     });
   }
 

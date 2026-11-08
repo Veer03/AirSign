@@ -21,13 +21,13 @@ export function describeCameraError(error: unknown): CameraError {
       return {
         kind: "denied",
         message:
-          "Camera permission was blocked. Allow camera access in the browser, then try again. Keyboard keys 1–7 still work.",
+          "Camera permission was blocked. Allow camera access in the browser, then try again. Keyboard keys 1–8 still work.",
       };
     case "NotFoundError":
     case "OverconstrainedError":
       return {
         kind: "not-found",
-        message: "No camera found. Plug one in, or use keyboard keys 1–7 for the demo.",
+        message: "No camera found. Plug one in, or use keyboard keys 1–8 for the demo.",
       };
     case "NotReadableError":
     case "AbortError":
@@ -41,7 +41,7 @@ export function describeCameraError(error: unknown): CameraError {
         message:
           error instanceof Error
             ? `Camera error: ${error.message}`
-            : "The camera could not start. Keyboard keys 1–7 still work.",
+            : "The camera could not start. Keyboard keys 1–8 still work.",
       };
   }
 }
