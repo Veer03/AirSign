@@ -8,7 +8,7 @@ type Sample = { letter: ASLLetter; values: Float32Array };
 const FEATURE_COUNT = 21 * 3;
 const K = 5;
 
-function normalize(points: Landmark[], mirror = false): Float32Array | null {
+export function normalizeHandLandmarks(points: Landmark[], mirror = false): Float32Array | null {
   if (points.length < 21) return null;
   const wrist = points[0];
   const middleBase = points[9];
@@ -25,6 +25,8 @@ function normalize(points: Landmark[], mirror = false): Float32Array | null {
   }
   return values;
 }
+
+const normalize = normalizeHandLandmarks;
 
 export class ASLAlphabetClassifier {
   constructor(private readonly samples: Sample[]) {}
@@ -94,7 +96,7 @@ export function getASLAlphabetClassifier(): Promise<ASLAlphabetClassifier> {
           for (let i = 0; i < FEATURE_COUNT; i += 3) {
             points.push({ x: values[i], y: values[i + 1], z: values[i + 2] });
           }
-          const normalized = normalize(points);
+          const normalized = normalizeHandLandmarks(points);
           if (normalized) samples.push({ letter: label as ASLLetter, values: normalized });
         }
 

@@ -15,6 +15,7 @@ export type GestureId =
   | "Finger_Heart"
   | "Gun"
   | "Wow"
+  | "Custom_Gesture"
   | `ASL_${"A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z"}`;
 
 export type GestureSource = "camera" | "keyboard" | "custom";
