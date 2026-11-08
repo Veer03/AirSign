@@ -130,8 +130,8 @@ export function useSpeak() {
         const blob = await requestAudio(clean, voice);
         await setCachedAudio(clean, voice, blob);
       } catch {
-        // Missing key or offline: the UI already explains this when speaking.
-        return;
+        // Missing key or offline: skip this phrase but keep warming the rest.
+        continue;
       }
     }
   }, []);
@@ -140,8 +140,9 @@ export function useSpeak() {
     tokenRef.current += 1;
     audioRef.current?.pause();
     audioRef.current = null;
+    releaseUrl();
     setState("idle");
-  }, []);
+  }, [releaseUrl]);
 
   return { speak, prewarm, stop, state, error, clearError: () => setError(null) };
 }

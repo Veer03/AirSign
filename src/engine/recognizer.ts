@@ -2,6 +2,7 @@
 
 import { FilesetResolver, GestureRecognizer } from "@mediapipe/tasks-vision";
 import type { HandSide } from "@/lib/contracts";
+import { detectCustomGesture } from "./custom-gestures";
 import type { Landmark } from "./landmarks";
 import { preferredDelegates, quietMediaPipeLogs, type Delegate } from "./delegate";
 
@@ -108,6 +109,8 @@ export function detect(
   const timestamp = Math.max(timestampMs, lastTimestamp + 1);
   lastTimestamp = timestamp;
 
+  // MediaPipe's INFO lines (e.g. "Created TensorFlow Lite XNNPACK delegate")
+  // are filtered globally by quietMediaPipeLogs() when the recognizer loads.
   const result = recognizer.recognizeForVideo(video, timestamp);
   const count = Math.max(result.landmarks?.length ?? 0, result.gestures?.length ?? 0);
   const hands: RawHand[] = [];
@@ -117,13 +120,17 @@ export function detect(
     const landmarks = result.landmarks?.[index];
     const category = result.handedness?.[index]?.[0]?.categoryName;
 
+    const points = landmarks
+      ? landmarks.map((point) => ({ x: point.x, y: point.y, z: point.z ?? 0 }))
+      : null;
+    // Landmark heuristics cover handshapes MediaPipe's model doesn't include.
+    const custom = detectCustomGesture(points);
+
     hands.push({
       side: displaySide(category),
-      gesture: top?.categoryName ?? "None",
-      confidence: top?.score ?? 0,
-      landmarks: landmarks
-        ? landmarks.map((point) => ({ x: point.x, y: point.y, z: point.z ?? 0 }))
-        : null,
+      gesture: custom?.gesture ?? top?.categoryName ?? "None",
+      confidence: custom?.confidence ?? top?.score ?? 0,
+      landmarks: points,
     });
   }
 

@@ -48,7 +48,7 @@ const FEATURES = [
   {
     icon: Hand,
     title: "Keyboard fallback",
-    body: "Keys 1–7 fire the same events as the camera. The demo survives bad lighting or a denied camera.",
+    body: "Keys 1–9 fire the same events as the camera. The demo survives bad lighting or a denied camera.",
     tag: "resilience",
   },
 ];
@@ -150,7 +150,7 @@ export default function LandingPage() {
               className="rise mt-10 flex flex-wrap gap-x-8 gap-y-3"
               style={{ animationDelay: "380ms" }}
             >
-              {["on-device tracking", "seven starter gestures", "two-hand pairs", "keyboard fallback"].map((item) => (
+              {["on-device tracking", "nine starter gestures", "two-hand pairs", "keyboard fallback"].map((item) => (
                 <span key={item} className="label flex items-center gap-2">
                   <span className="h-1 w-1 bg-accent" /> {item}
                 </span>
@@ -255,7 +255,7 @@ export default function LandingPage() {
             <div>
               <h2 className="text-3xl font-medium tracking-tight sm:text-4xl">Open the workspace.</h2>
               <p className="mt-2 text-sm text-white/50">
-                Camera on, hand up, phrase spoken. Keys 1–7 work without a camera.
+                Camera on, hand up, phrase spoken. Keys 1–9 work without a camera.
               </p>
             </div>
             <Link

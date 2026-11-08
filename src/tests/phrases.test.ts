@@ -2,17 +2,18 @@ import { describe, expect, it } from "vitest";
 import { makeGestureEvent, phraseForGesture, phraseForKey, STARTER_PHRASES } from "../lib/starter-phrases";
 
 describe("starter phrases", () => {
-  it("maps every keyboard key 1-7 to a distinct phrase", () => {
-    const phrases = ["1", "2", "3", "4", "5", "6", "7"].map((key) => phraseForKey(key));
+  it("maps every keyboard key 1-9 to a distinct phrase", () => {
+    const phrases = ["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((key) => phraseForKey(key));
     expect(phrases.every(Boolean)).toBe(true);
-    expect(new Set(phrases.map((p) => p?.id)).size).toBe(7);
-    expect(phraseForKey("8")).toBeUndefined();
+    expect(new Set(phrases.map((p) => p?.id)).size).toBe(9);
+    expect(phraseForKey("0")).toBeUndefined();
     expect(phraseForKey("x")).toBeUndefined();
   });
 
   it("maps MediaPipe gestures to phrases", () => {
     expect(phraseForGesture("Thumb_Up")?.text).toBe("Thumbs up");
-    expect(STARTER_PHRASES).toHaveLength(7);
+    expect(phraseForGesture("Middle_Finger")?.text).toBe("Fuck you");
+    expect(STARTER_PHRASES).toHaveLength(9);
   });
 
   it("builds a complete gesture event", () => {

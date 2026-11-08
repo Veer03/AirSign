@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Camera, CameraOff, Sparkles } from "lucide-react";
-import type { GestureEvent, Settings } from "@/lib/contracts";
+import type { GestureEvent, GestureId, Settings } from "@/lib/contracts";
 import { DEFAULT_SETTINGS } from "@/lib/contracts";
-import { makeGestureEvent, phraseForKey, STARTER_PHRASES } from "@/lib/starter-phrases";
+import { makeGestureEvent, phraseForGesture, phraseForKey, STARTER_PHRASES } from "@/lib/starter-phrases";
 import { loadSettings, saveSettings } from "@/lib/storage";
 import { useSpeak } from "@/voice/useSpeak";
 import { CameraPanel } from "@/components/CameraPanel";
@@ -20,6 +20,7 @@ export default function WorkspacePage() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
+  const [alphabetMode, setAlphabetMode] = useState(false);
   const [chips, setChips] = useState<GestureEvent[]>([]);
   const [last, setLast] = useState<GestureEvent | null>(null);
   const [voiceConfigured, setVoiceConfigured] = useState<boolean | null>(null);
@@ -95,7 +96,11 @@ export default function WorkspacePage() {
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
 
-      const phrase = phraseForKey(event.key);
+      const alphabetKey =
+        alphabetMode && /^[a-z]$/i.test(event.key)
+          ? phraseForGesture(`ASL_${event.key.toUpperCase()}` as GestureId)
+          : undefined;
+      const phrase = alphabetKey ?? phraseForKey(event.key);
       if (!phrase) return;
       event.preventDefault();
       handleLock(makeGestureEvent(phrase, 1, "keyboard"));
@@ -103,7 +108,7 @@ export default function WorkspacePage() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleLock]);
+  }, [alphabetMode, handleLock]);
 
   const speakSentence = useCallback(() => {
     const sentence = chips.map((chip) => chip.phrase).join(". ");
@@ -131,7 +136,21 @@ export default function WorkspacePage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="label hidden md:block">starter gestures · not sign language</span>
+            <span className="label hidden md:block">
+              {alphabetMode ? "ASL alphabet spelling" : "starter gestures · not sign language"}
+            </span>
+            <button
+              type="button"
+              aria-pressed={alphabetMode}
+              onClick={() => setAlphabetMode((value) => !value)}
+              className={
+                alphabetMode
+                  ? "border border-accent bg-accent/15 px-3 py-2 text-xs uppercase tracking-[0.12em] text-accent"
+                  : "border border-white/25 px-3 py-2 text-xs uppercase tracking-[0.12em] text-white/65 transition hover:border-white/50 hover:text-white"
+              }
+            >
+              ASL A–Z {alphabetMode ? "on" : "off"}
+            </button>
             <button
               type="button"
               onClick={() => setCameraOn((value) => !value)}
@@ -152,12 +171,17 @@ export default function WorkspacePage() {
                 Make a gesture. It speaks.
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-white/50">
-                Hold a starter pose — one hand, or a matching pair — until the ring fills.
-                Speak-on-lock is{" "}
-                <span className={settings.autoSpeak ? "text-accent" : "text-white/80"}>
-                  {settings.autoSpeak ? "on" : "off"}
-                </span>
-                . The video never leaves this device.
+                {alphabetMode
+                  ? "Hold a static ASL letter pose until the ring fills. Each letter is added and spoken if speak-on-lock is on."
+                  : "Hold a starter pose — one hand, or a matching pair — until the ring fills. Speak-on-lock is "}
+                {!alphabetMode ? (
+                  <span className={settings.autoSpeak ? "text-accent" : "text-white/80"}>
+                    {settings.autoSpeak ? "on" : "off"}
+                  </span>
+                ) : null}
+                {alphabetMode
+                  ? " The video never leaves this device."
+                  : ". The video never leaves this device."}
               </p>
             </div>
             <span className="label flex items-center gap-1.5">
@@ -171,6 +195,8 @@ export default function WorkspacePage() {
             dwellMs={settings.dwellMs}
             repeatMs={settings.repeatMs}
             twoHands={settings.twoHands}
+            alphabetMode={alphabetMode}
+            onAlphabetModeChange={setAlphabetMode}
             onEnable={() => setCameraOn(true)}
             onDisable={() => setCameraOn(false)}
             onLock={handleLock}
@@ -245,7 +271,7 @@ export default function WorkspacePage() {
 
             <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-3">
               <span className="label">
-                {last ? `${Math.round(last.confidence * 100)}% confidence` : "keys 1–7 work now"}
+                {last ? `${Math.round(last.confidence * 100)}% confidence` : "keys 1–9 work now"}
               </span>
               <span className="label flex items-center gap-1.5">
                 <span
