@@ -4,6 +4,7 @@ import { FilesetResolver, GestureRecognizer } from "@mediapipe/tasks-vision";
 import type { HandSide } from "@/lib/contracts";
 import { detectCustomGesture } from "./custom-gestures";
 import type { Landmark } from "./landmarks";
+import { preferredDelegates, quietMediaPipeLogs, type Delegate } from "./delegate";
 
 /** One hand as returned by MediaPipe for a single frame. */
 export type RawHand = {
@@ -48,12 +49,29 @@ async function createRecognizer(): Promise<GestureRecognizer> {
     minTrackingConfidence: 0.5,
   });
 
-  try {
-    return await GestureRecognizer.createFromOptions(fileset, baseOptions("GPU"));
-  } catch {
-    // Older GPUs / some Linux drivers fail on the GPU delegate.
-    return await GestureRecognizer.createFromOptions(fileset, baseOptions("CPU"));
+  quietMediaPipeLogs();
+  // GPU first unless ?delegate=cpu; older GPUs / some drivers fail on GPU.
+  const delegates = preferredDelegates();
+  let lastError: unknown;
+  for (const delegate of delegates) {
+    try {
+      const recognizer = await GestureRecognizer.createFromOptions(fileset, baseOptions(delegate));
+      activeDelegate = delegate;
+      console.info("[gestures] delegate:", delegate);
+      return recognizer;
+    } catch (error) {
+      lastError = error;
+      console.warn(`[gestures] ${delegate} delegate failed`, error);
+    }
   }
+  throw lastError;
+}
+
+let activeDelegate: Delegate | null = null;
+
+/** Delegate the current recognizer was created with (null until loaded). */
+export function recognizerDelegate(): Delegate | null {
+  return activeDelegate;
 }
 
 export function getRecognizer(): Promise<GestureRecognizer> {
@@ -71,6 +89,14 @@ export function resetRecognizer() {
   lastTimestamp = 0;
 }
 
+/** Close the current recognizer so the next getRecognizer() rebuilds it (e.g. new delegate). */
+export function disposeRecognizer() {
+  const pending = recognizerPromise;
+  resetRecognizer();
+  activeDelegate = null;
+  void pending?.then((recognizer) => recognizer.close()).catch(() => {});
+}
+
 /**
  * Runs one synchronous inference pass. MediaPipe requires strictly increasing
  * timestamps, so we guarantee that here.
@@ -83,24 +109,9 @@ export function detect(
   const timestamp = Math.max(timestampMs, lastTimestamp + 1);
   lastTimestamp = timestamp;
 
-  // TensorFlow Lite emits this informational CPU-delegate message through
-  // console.error in some browsers. Next's dev overlay mistakes it for an
-  // application error, so filter only this known INFO line during inference.
-  const originalConsoleError = console.error;
-  console.error = (...args: Parameters<typeof console.error>) => {
-    const message = args.map((arg) => String(arg)).join(" ");
-    if (message.includes("INFO: Created TensorFlow Lite XNNPACK delegate for CPU.")) {
-      return;
-    }
-    originalConsoleError.call(console, ...args);
-  };
-
-  let result: ReturnType<GestureRecognizer["recognizeForVideo"]>;
-  try {
-    result = recognizer.recognizeForVideo(video, timestamp);
-  } finally {
-    console.error = originalConsoleError;
-  }
+  // MediaPipe's INFO lines (e.g. "Created TensorFlow Lite XNNPACK delegate")
+  // are filtered globally by quietMediaPipeLogs() when the recognizer loads.
+  const result = recognizer.recognizeForVideo(video, timestamp);
   const count = Math.max(result.landmarks?.length ?? 0, result.gestures?.length ?? 0);
   const hands: RawHand[] = [];
 

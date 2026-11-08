@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Camera, CameraOff, Sparkles } from "lucide-react";
+import { ArrowLeft, Camera, CameraOff, Sparkles, SwitchCamera } from "lucide-react";
 import type { GestureEvent, GestureId, Settings } from "@/lib/contracts";
 import { DEFAULT_SETTINGS } from "@/lib/contracts";
 import { makeGestureEvent, phraseForGesture, phraseForKey, STARTER_PHRASES } from "@/lib/starter-phrases";
@@ -15,17 +15,57 @@ import { SentenceStrip } from "@/components/SentenceStrip";
 import { SettingsBar } from "@/components/SettingsBar";
 import { ReplyCaptions } from "@/components/ReplyCaptions";
 import { RepeatWaitPanel } from "@/components/RepeatWaitPanel";
+import { ASLAlphabetPractice } from "@/components/ASLAlphabetPractice";
+import { ASLNumberPractice } from "@/components/ASLNumberPractice";
+import { isPracticeNumber, PracticeDrill, randomPracticeTarget } from "@/components/PracticeDrill";
+import type { CameraFacing } from "@/engine/camera";
+import { useIsMobile } from "@/lib/useIsMobile";
 
 export default function WorkspacePage() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
+  const [facing, setFacing] = useState<CameraFacing>("user");
+  const isMobile = useIsMobile();
   const [alphabetMode, setAlphabetMode] = useState(false);
+  const [numberMode, setNumberMode] = useState(false);
+  const [sideTab, setSideTab] = useState<"interpret" | "practice">("interpret");
+  // Charts start closed and close again whenever the Practice tab is opened.
+  const [alphabetPracticeOpen, setAlphabetPracticeOpen] = useState(false);
+  const [numberPracticeOpen, setNumberPracticeOpen] = useState(false);
+  const [practiceTarget, setPracticeTarget] = useState<string | null>(null);
+  const [practiceCorrect, setPracticeCorrect] = useState(false);
+  const practiceTargetRef = useRef<string | null>(null);
   const [chips, setChips] = useState<GestureEvent[]>([]);
   const [last, setLast] = useState<GestureEvent | null>(null);
   const [voiceConfigured, setVoiceConfigured] = useState<boolean | null>(null);
 
   const settingsRef = useRef(settings);
+
+  useEffect(() => {
+    practiceTargetRef.current = practiceTarget;
+  }, [practiceTarget]);
+
+  /** Highlight a practice key and switch the camera to the matching recognizer. */
+  const startPractice = useCallback((target: string) => {
+    setPracticeTarget(target);
+    setPracticeCorrect(false);
+    const number = isPracticeNumber(target);
+    setNumberMode(number);
+    setAlphabetMode(!number);
+    setCameraOn(true);
+  }, []);
+
+  const switchSideTab = useCallback((tab: "interpret" | "practice") => {
+    setSideTab(tab);
+    if (tab === "practice") {
+      setAlphabetPracticeOpen(false);
+      setNumberPracticeOpen(false);
+    } else {
+      setPracticeTarget(null);
+      setPracticeCorrect(false);
+    }
+  }, []);
   const { speak, prewarm, state: speakState, error: speakError, clearError } = useSpeak();
 
   useEffect(() => {
@@ -80,6 +120,10 @@ export default function WorkspacePage() {
 
   const handleLock = useCallback(
     (event: GestureEvent) => {
+      // Practice: a camera lock on the highlighted letter/number counts as correct.
+      if (event.source === "camera" && practiceTargetRef.current === event.label) {
+        setPracticeCorrect(true);
+      }
       setChips((prev) => [...prev, event]);
       setLast(event);
       if (settingsRef.current.autoSpeak) {
@@ -116,11 +160,16 @@ export default function WorkspacePage() {
   }, [chips, speak]);
 
   return (
-    <div data-reduced={settings.reducedMotion ? "true" : "false"} className="relative min-h-screen">
-      <PixelBackdrop />
+    <div
+      data-reduced={settings.reducedMotion ? "true" : "false"}
+      data-camera-active={cameraOn ? "true" : "false"}
+      data-theme="matte"
+      className="relative min-h-screen"
+    >
+      <PixelBackdrop matte />
 
-      <header className="sticky top-0 z-30 border-b border-white/70 bg-black/90 backdrop-blur">
-        <div className="mx-auto flex h-[52px] max-w-[1500px] items-center justify-between gap-3 px-4">
+      <header className="sticky top-0 z-30 border-b border-white/70 bg-black/90">
+        <div className="mx-auto flex h-[52px] max-w-[1500px] items-center justify-between gap-2 px-3 sm:gap-3 sm:px-4">
           <div className="flex items-center gap-4">
             <Link href="/" className="flex items-center gap-2.5">
               <span className="h-3 w-3 bg-accent" />
@@ -135,26 +184,29 @@ export default function WorkspacePage() {
             </Link>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <span className="label hidden md:block">
-              {alphabetMode ? "ASL alphabet + Wow sign" : "starter gestures · not sign language"}
+              {alphabetMode
+                ? "ASL alphabet + Wow sign"
+                : numberMode
+                  ? "ASL numbers 1–10"
+                  : "starter gestures · not sign language"}
             </span>
-            <button
-              type="button"
-              aria-pressed={alphabetMode}
-              onClick={() => setAlphabetMode((value) => !value)}
-              className={
-                alphabetMode
-                  ? "border border-accent bg-accent/15 px-3 py-2 text-xs uppercase tracking-[0.12em] text-accent"
-                  : "border border-white/25 px-3 py-2 text-xs uppercase tracking-[0.12em] text-white/65 transition hover:border-white/50 hover:text-white"
-              }
-            >
-              ASL A–Z {alphabetMode ? "on" : "off"}
-            </button>
+            {isMobile ? (
+              <button
+                type="button"
+                onClick={() => setFacing((value) => (value === "user" ? "environment" : "user"))}
+                aria-label={facing === "user" ? "Switch to rear camera" : "Switch to front camera"}
+                className="inline-flex items-center gap-1.5 border border-white/40 px-3 py-2 text-xs uppercase tracking-[0.12em] text-white/80 transition hover:border-white hover:text-white"
+              >
+                <SwitchCamera className="h-3.5 w-3.5" />
+                {facing === "user" ? "Rear" : "Front"}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setCameraOn((value) => !value)}
-              className="inline-flex items-center gap-2 bg-accent px-4 py-2 text-xs font-medium uppercase tracking-[0.12em] text-black transition hover:bg-accent-soft"
+              className="inline-flex items-center gap-2 whitespace-nowrap bg-accent px-3 py-2 sm:px-4 text-xs font-medium uppercase tracking-[0.12em] text-black transition hover:bg-accent-soft"
             >
               {cameraOn ? <CameraOff className="h-3.5 w-3.5" /> : <Camera className="h-3.5 w-3.5" />}
               {cameraOn ? "Stop camera" : "Start camera"}
@@ -163,8 +215,8 @@ export default function WorkspacePage() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1500px] gap-5 px-4 py-6 lg:grid-cols-12">
-        <section className="space-y-5 lg:col-span-8">
+      <main className="mx-auto grid max-w-[1500px] gap-5 px-3 py-4 sm:px-4 sm:py-6 lg:grid-cols-12">
+        <section className="min-w-0 space-y-5 lg:col-span-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-2xl font-medium tracking-tight sm:text-3xl">
@@ -173,13 +225,15 @@ export default function WorkspacePage() {
               <p className="mt-1 max-w-2xl text-sm text-white/50">
                 {alphabetMode
                   ? "Hold a static ASL letter pose or the Wow pose until the ring fills. The result is added and spoken if speak-on-lock is on."
-                  : "Hold a starter pose — one hand, or a matching pair — until the ring fills. Speak-on-lock is "}
-                {!alphabetMode ? (
+                  : numberMode
+                    ? "Hold a static ASL number handshape until the ring fills. The result is added and spoken if speak-on-lock is on."
+                    : "Hold a starter pose — one hand, or a matching pair — until the ring fills. Speak-on-lock is "}
+                {!alphabetMode && !numberMode ? (
                   <span className={settings.autoSpeak ? "text-accent" : "text-white/80"}>
                     {settings.autoSpeak ? "on" : "off"}
                   </span>
                 ) : null}
-                {alphabetMode
+                {alphabetMode || numberMode
                   ? " The video never leaves this device."
                   : ". The video never leaves this device."}
               </p>
@@ -196,6 +250,12 @@ export default function WorkspacePage() {
             repeatMs={settings.repeatMs}
             twoHands={settings.twoHands}
             alphabetMode={alphabetMode}
+            practiceLetter={practiceTarget && !isPracticeNumber(practiceTarget) ? practiceTarget : null}
+            practiceNumber={practiceTarget && isPracticeNumber(practiceTarget) ? practiceTarget : null}
+            onAlphabetModeChange={setAlphabetMode}
+            facing={facing}
+            numberMode={numberMode}
+            onNumberModeChange={setNumberMode}
             onEnable={() => setCameraOn(true)}
             onDisable={() => setCameraOn(false)}
             onLock={handleLock}
@@ -238,66 +298,100 @@ export default function WorkspacePage() {
           ) : null}
         </section>
 
-        <aside className="space-y-5 lg:col-span-4">
-          <PixelPanel className="p-5">
-            <div className="flex items-center justify-between">
-              <span className="label">last locked phrase</span>
-              <span className="label uppercase">
-                {last
-                  ? `${last.source} · ${
-                      last.hands === 2
-                        ? "2h"
-                        : last.side === "left"
-                          ? "left"
-                          : last.side === "right"
-                            ? "right"
-                            : "1h"
-                    }`
-                  : "—"}
-              </span>
-            </div>
+        <aside className="min-w-0 space-y-5 lg:col-span-4">
+          <div className="grid grid-cols-2 border border-white/25" role="tablist" aria-label="Side panel">
+            {(["interpret", "practice"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={sideTab === tab}
+                onClick={() => switchSideTab(tab)}
+                className={
+                  sideTab === tab
+                    ? "bg-accent px-3 py-2.5 text-xs font-medium uppercase tracking-[0.12em] text-black"
+                    : "px-3 py-2.5 text-xs uppercase tracking-[0.12em] text-white/65 transition hover:bg-white/10 hover:text-white"
+                }
+              >
+                {tab === "interpret" ? "Interpret" : "Practice"}
+              </button>
+            ))}
+          </div>
 
-            <p
-              className="mt-4 min-h-[2.5rem] text-white"
-              style={{
-                fontFamily: "var(--font-atkinson)",
-                fontSize: `${1.65 * settings.textScale}rem`,
-                lineHeight: 1.15,
-              }}
-            >
-              {last ? last.phrase : <span className="text-white/30">Waiting for a gesture</span>}
-            </p>
+          {sideTab === "practice" ? (
+            <>
+              <ASLAlphabetPractice open={alphabetPracticeOpen} onOpenChange={setAlphabetPracticeOpen} />
+              <ASLNumberPractice open={numberPracticeOpen} onOpenChange={setNumberPracticeOpen} />
+              <PracticeDrill
+                target={practiceTarget}
+                correct={practiceCorrect}
+                onPractice={() => startPractice(randomPracticeTarget(practiceTarget))}
+                onPick={startPractice}
+              />
+            </>
+          ) : (
+            <>
+              <PixelPanel className="p-5">
+                <div className="flex items-center justify-between">
+                  <span className="label">last locked phrase</span>
+                  <span className="label uppercase">
+                    {last
+                      ? `${last.source} · ${
+                          last.hands === 2
+                            ? "2h"
+                            : last.side === "left"
+                              ? "left"
+                              : last.side === "right"
+                                ? "right"
+                                : "1h"
+                        }`
+                      : "—"}
+                  </span>
+                </div>
 
-            <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-3">
-              <span className="label">
-                {last ? `${Math.round(last.confidence * 100)}% confidence` : "keys 1–9 work now"}
-              </span>
-              <span className="label flex items-center gap-1.5">
-                <span
-                  className={
-                    settings.autoSpeak && last
-                      ? "h-1.5 w-1.5 rounded-full bg-accent"
-                      : "h-1.5 w-1.5 rounded-full bg-white/25"
-                  }
-                />
-                {settings.autoSpeak && last ? "spoken on lock" : "manual speak"}
-              </span>
-            </div>
-          </PixelPanel>
+                <p
+                  className="mt-4 min-h-[2.5rem] text-white"
+                  style={{
+                    fontFamily: "var(--font-atkinson)",
+                    fontSize: `${1.65 * settings.textScale}rem`,
+                    lineHeight: 1.15,
+                  }}
+                >
+                  {last ? last.phrase : <span className="text-white/30">Waiting for a gesture</span>}
+                </p>
 
-          <SentenceStrip
-            chips={chips}
-            onRemove={(id) => setChips((prev) => prev.filter((chip) => chip.id !== id))}
-            onClear={() => {
-              setChips([]);
-              setLast(null);
-            }}
-            onSpeak={speakSentence}
-            speaking={speakState}
-            autoSpeak={settings.autoSpeak}
-          />
+                <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-3">
+                  <span className="label">
+                    {last ? `${Math.round(last.confidence * 100)}% confidence` : "keys 1–9 work now"}
+                  </span>
+                  <span className="label flex items-center gap-1.5">
+                    <span
+                      className={
+                        settings.autoSpeak && last
+                          ? "h-1.5 w-1.5 rounded-full bg-accent"
+                          : "h-1.5 w-1.5 rounded-full bg-white/25"
+                      }
+                    />
+                    {settings.autoSpeak && last ? "spoken on lock" : "manual speak"}
+                  </span>
+                </div>
+              </PixelPanel>
 
-          <ReplyCaptions />
+              <SentenceStrip
+                chips={chips}
+                onRemove={(id) => setChips((prev) => prev.filter((chip) => chip.id !== id))}
+                onClear={() => {
+                  setChips([]);
+                  setLast(null);
+                }}
+                onSpeak={speakSentence}
+                speaking={speakState}
+                autoSpeak={settings.autoSpeak}
+              />
+
+              <ReplyCaptions />
+            </>
+          )}
         </aside>
       </main>
 

@@ -1,10 +1,16 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, RotateCcw, ShieldCheck } from "lucide-react";
 import type { GestureEvent, HandCandidate } from "@/lib/contracts";
 import { makeSignEvent } from "@/lib/starter-phrases";
-import { useGestures, type SignLock } from "@/engine/useGestures";
+import { useGestures, type AlphabetModel, type SignLock } from "@/engine/useGestures";
+import { useAslWords } from "@/engine/useAslWords";
+import { glossToText, type WordGuess } from "@/engine/asl-classifier";
+import { saveDelegate, savedDelegate, type Delegate } from "@/engine/delegate";
+import { disposeRecognizer } from "@/engine/recognizer";
+import { disposeHolistic } from "@/engine/holistic";
+import type { CameraFacing } from "@/engine/camera";
 import { cn } from "@/lib/utils";
 import { HoldRing } from "./HoldRing";
 import { PixelPanel } from "./PixelPanel";
@@ -15,10 +21,19 @@ type CameraPanelProps = {
   /** Wait before the same held signal can speak again. */
   repeatMs: number;
   twoHands: boolean;
+  /** Harshpal's kNN fingerspelling mode (owned by the page). */
   alphabetMode: boolean;
+  onAlphabetModeChange?: (on: boolean) => void;
+  /** Harshpal's ASL 1–10 mode (owned by the page). */
+  numberMode: boolean;
+  onNumberModeChange?: (on: boolean) => void;
+  practiceLetter?: string | null;
+  practiceNumber?: string | null;
   onEnable: () => void;
   onDisable?: () => void;
   onLock: (event: GestureEvent) => void;
+  /** Front ("user") or rear ("environment") camera; rear is offered on mobile only. */
+  facing?: CameraFacing;
 };
 
 export function CameraPanel(props: CameraPanelProps) {
@@ -32,6 +47,16 @@ export function CameraPanel(props: CameraPanelProps) {
   );
 }
 
+const MODES = ["starter", "words", "alphabet", "alphabet-pretrained", "numbers"] as const;
+type Mode = (typeof MODES)[number];
+const MODE_LABELS: Record<Mode, string> = {
+  starter: "starter",
+  words: "asl words",
+  alphabet: "alphabet",
+  "alphabet-pretrained": "alphabet · pretrained",
+  numbers: "numbers",
+};
+
 function sideTag(side: HandCandidate["side"]) {
   if (side === "left") return "L";
   if (side === "right") return "R";
@@ -44,6 +69,12 @@ function CameraSurface({
   repeatMs,
   twoHands,
   alphabetMode,
+  onAlphabetModeChange,
+  numberMode,
+  onNumberModeChange,
+  practiceLetter,
+  practiceNumber,
+  facing = "user",
   onEnable,
   onDisable,
   onLock,
@@ -54,6 +85,83 @@ function CameraSurface({
   const stageRef = useRef<HTMLDivElement | null>(null);
   const ringRef = useRef<HTMLDivElement | null>(null);
 
+  // "starter" = MediaPipe handshapes; "words" = Holistic + asl-signs model;
+  // "alphabet" = Harshpal's kNN letters (page-owned alphabetMode, same
+  // GestureRecognizer pipeline as starter). Read the URL after mount so SSR
+  // and the client agree.
+  const [baseMode, setBaseMode] = useState<"starter" | "words">("starter");
+  // Which letter classifier the alphabet tabs use: Harshpal's kNN or the
+  // pretrained MLP. The page's "ASL A–Z" button keeps whichever was last used.
+  const [alphabetModel, setAlphabetModel] = useState<AlphabetModel>("knn");
+  // Practice drill letters are checked with the pretrained classifier.
+  useEffect(() => {
+    if (practiceLetter) setAlphabetModel("pretrained");
+  }, [practiceLetter]);
+  const mode: Mode = numberMode
+    ? "numbers"
+    : alphabetMode
+      ? alphabetModel === "pretrained"
+        ? "alphabet-pretrained"
+        : "alphabet"
+      : baseMode;
+  const switchMode = useCallback(
+    (next: Mode) => {
+      if (next === "alphabet" || next === "alphabet-pretrained") {
+        setAlphabetModel(next === "alphabet-pretrained" ? "pretrained" : "knn");
+        onNumberModeChange?.(false);
+        onAlphabetModeChange?.(true);
+      } else if (next === "numbers") {
+        onAlphabetModeChange?.(false);
+        onNumberModeChange?.(true);
+      } else {
+        onAlphabetModeChange?.(false);
+        onNumberModeChange?.(false);
+        setBaseMode(next);
+      }
+    },
+    [onAlphabetModeChange, onNumberModeChange],
+  );
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("mode");
+    if (fromUrl && (MODES as readonly string[]).includes(fromUrl)) switchMode(fromUrl as Mode);
+    // Mount only: the URL seeds the initial mode.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Keep ?mode= in sync, including when the page's "ASL A–Z" button flips it.
+  // Skip the first run so it can't erase the URL before the mount read applies.
+  const firstUrlSync = useRef(true);
+  useEffect(() => {
+    if (firstUrlSync.current) {
+      firstUrlSync.current = false;
+      return;
+    }
+    const url = new URL(window.location.href);
+    if (mode === "starter") url.searchParams.delete("mode");
+    else url.searchParams.set("mode", mode);
+    window.history.replaceState(null, "", url);
+  }, [mode]);
+  const words = mode === "words";
+  // Harshpal's alphabet tab also recognizes the Wow / finger-heart / middle
+  // finger poses; the pretrained tab stays letters-only.
+  const knnAlphabet = mode === "alphabet";
+
+  // CPU/GPU toggle: saved in localStorage; switching rebuilds the models by
+  // remounting this surface (same path as "Try again").
+  const [delegateChoice, setDelegateChoice] = useState<Delegate | null>(null);
+  useEffect(() => setDelegateChoice(savedDelegate()), []);
+  const switchDelegate = useCallback(
+    (next: Delegate) => {
+      saveDelegate(next);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("delegate"); // the toggle wins over a stale URL override
+      window.history.replaceState(null, "", url);
+      disposeRecognizer();
+      disposeHolistic();
+      onRetry();
+    },
+    [onRetry],
+  );
+
   const handleLock = useCallback(
     (lock: SignLock) => {
       onLock(makeSignEvent(lock, lock.confidence, "camera"));
@@ -61,18 +169,42 @@ function CameraSurface({
     [onLock],
   );
 
-  const runtime = useGestures({
-    enabled,
+  const handleWord = useCallback(
+    (guess: WordGuess) => {
+      onLock({
+        id: `asl-${guess.gloss}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        gesture: "Unknown",
+        label: `ASL · ${guess.gloss}`,
+        phrase: glossToText(guess.gloss),
+        confidence: guess.probability,
+        at: Date.now(),
+        source: "camera",
+        hands: 1,
+      });
+    },
+    [onLock],
+  );
+
+  const asl = useAslWords({ enabled: enabled && words, videoRef, canvasRef, onWord: handleWord, facing });
+
+  const starterRuntime = useGestures({
+    enabled: enabled && !words,
     dwellMs,
     repeatMs,
     twoHands,
     alphabetMode,
+    alphabetModel,
+    numberMode,
     onLock: handleLock,
     videoRef,
     canvasRef,
     stageRef,
     ringRef,
+    facing,
   });
+  const runtime = words
+    ? { ...starterRuntime, ...asl.runtime, hands: [] as HandCandidate[] }
+    : starterRuntime;
 
   const showError = enabled && (runtime.state === "denied" || runtime.state === "error");
   const starting = enabled && runtime.state === "starting";
@@ -80,10 +212,12 @@ function CameraSurface({
   const handCount = runtime.hands.length;
   const sign = runtime.sign;
   const confidence = sign?.confidence ?? 0;
+  // Selfie preview is mirrored; the rear camera shows the scene as-is.
+  const mirrored = facing === "user";
 
   return (
     <PixelPanel className="overflow-hidden">
-      <div className="flex items-center justify-between gap-3 border-b border-white/15 px-4 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-white/15 px-3 py-2.5 sm:px-4">
         <div className="flex items-center gap-2">
           <span
             className={cn(
@@ -106,8 +240,50 @@ function CameraSurface({
                     : runtime.state}
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          {ready ? <span className="label">{runtime.fps} fps</span> : null}
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
+          <div
+            className="no-scrollbar order-first flex w-full overflow-x-auto border border-white/25 sm:order-none sm:w-auto"
+            role="group"
+            aria-label="Recognition mode"
+          >
+            {MODES.map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={mode === value}
+                onClick={() => switchMode(value)}
+                className={cn(
+                  "label shrink-0 whitespace-nowrap px-2.5 py-2 transition sm:px-2 sm:py-1",
+                  mode === value ? "bg-white/15 !text-white" : "hover:!text-white",
+                )}
+              >
+                {MODE_LABELS[value]}
+              </button>
+            ))}
+          </div>
+          <div className="flex border border-white/25" role="group" aria-label="Processing">
+            {(["GPU", "CPU"] as const).map((value) => {
+              const active = (delegateChoice ?? runtime.delegate ?? "GPU") === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={active}
+                  title={value === "CPU" ? "Use if tracking is slow or labels look wrong" : "Faster when hardware acceleration works"}
+                  onClick={() => (active ? undefined : switchDelegate(value))}
+                  className={cn("label px-2.5 py-2 transition sm:px-2 sm:py-1", active ? "bg-white/15 !text-white" : "hover:!text-white")}
+                >
+                  {value.toLowerCase()}
+                </button>
+              );
+            })}
+          </div>
+          {ready ? (
+            <span className="label">
+              {runtime.fps} fps
+              {runtime.delegate ? ` · ${runtime.delegate.toLowerCase()}` : ""}
+            </span>
+          ) : null}
           <span className="label hidden items-center gap-1 sm:flex">
             <ShieldCheck className="h-3 w-3" /> on-device
           </span>
@@ -115,7 +291,7 @@ function CameraSurface({
             <button
               type="button"
               onClick={onDisable}
-              className="label flex items-center gap-1 border border-white/25 px-2 py-1 transition hover:border-white/60 hover:text-white"
+              className="label ml-auto flex items-center gap-1 border border-white/25 px-2.5 py-2 transition hover:border-white/60 hover:text-white sm:ml-0 sm:px-2 sm:py-1"
             >
               <CameraOff className="h-3 w-3" /> stop
             </button>
@@ -123,7 +299,7 @@ function CameraSurface({
         </div>
       </div>
 
-      <div className="relative aspect-video w-full overflow-hidden bg-black">
+      <div className="relative aspect-[3/4] w-full overflow-hidden bg-black sm:aspect-video">
         <div className="absolute inset-0 overflow-hidden">
           <div
             ref={stageRef}
@@ -132,14 +308,14 @@ function CameraSurface({
           >
             <video
               ref={videoRef}
-              className="absolute inset-0 h-full w-full -scale-x-100 object-cover"
+              className={cn("absolute inset-0 h-full w-full object-cover", mirrored && "-scale-x-100")}
               playsInline
               muted
               autoPlay
             />
             <canvas
               ref={canvasRef}
-              className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover"
+              className={cn("pointer-events-none absolute inset-0 h-full w-full object-cover", mirrored && "-scale-x-100")}
               aria-hidden
             />
           </div>
@@ -156,8 +332,12 @@ function CameraSurface({
               <h2 className="text-lg font-medium">Turn on the camera</h2>
               <p className="mt-2 text-sm text-white/60">
                 {alphabetMode
-                  ? "Show one static ASL letter or the Wow pose, or press its A–Z key."
-                  : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
+                  ? knnAlphabet
+                    ? "Show one static ASL letter or the Wow pose, or press its A–Z key."
+                    : "Show one static ASL letter, or press its A–Z key."
+                  : numberMode
+                    ? "Show one ASL number handshape from 1 to 10."
+                    : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
                 The video stays in this browser — only text is sent to the server.
               </p>
               <button
@@ -168,7 +348,7 @@ function CameraSurface({
                 <Camera className="h-4 w-4" /> Enable camera
               </button>
               <p className="label mt-4 !text-[9px]">
-                {alphabetMode ? "A–Z keys also work" : "or press keys 1–9"}
+                {alphabetMode ? "A–Z keys also work" : numberMode ? "Hold the pose to speak the number" : "or press keys 1–9"}
               </p>
             </div>
           </div>
@@ -199,9 +379,17 @@ function CameraSurface({
           </div>
         ) : null}
 
-        {enabled && ready ? (
+        {enabled && ready && words ? (
+          <AslOverlay
+            handsVisible={asl.runtime.handsVisible}
+            message={asl.runtime.message}
+            guesses={asl.runtime.guesses}
+          />
+        ) : null}
+
+        {enabled && ready && !words ? (
           <>
-            <div className="absolute left-4 top-4 z-10">
+            <div className="absolute left-2 top-2 z-10 sm:left-4 sm:top-4">
               <span className="label flex items-center gap-2 bg-black/60 px-2 py-1 !text-[9px] backdrop-blur">
                 <span
                   className={cn(
@@ -209,14 +397,16 @@ function CameraSurface({
                     handCount > 0 ? "bg-emerald-400" : "bg-white/40",
                   )}
                 />
-                {alphabetMode
+                {alphabetMode || numberMode
                   ? sign?.phrase === "Wow!"
                     ? handCount === 2
                       ? "two Wow hands"
                       : "Wow sign"
                     : handCount === 0
                     ? "show one hand"
-                    : "ASL alphabet hand"
+                    : numberMode
+                      ? "ASL number hand"
+                      : "ASL alphabet hand"
                   : handCount === 0
                     ? "searching for hands"
                     : handCount === 1
@@ -226,7 +416,7 @@ function CameraSurface({
             </div>
 
             {handCount > 0 ? (
-              <div className="absolute right-4 top-4 z-10 min-w-[10rem] space-y-1.5 border border-white/30 bg-black/70 px-3 py-2 backdrop-blur">
+              <div className="absolute right-2 top-2 z-10 min-w-[9rem] space-y-1.5 sm:right-4 sm:top-4 sm:min-w-[10rem] border border-white/30 bg-black/70 px-3 py-2 backdrop-blur">
                 <p className="label !text-[8px]">
                   {runtime.combo ? "two-hand match" : "live candidate"}
                 </p>
@@ -290,6 +480,32 @@ function CameraSurface({
               </div>
             ) : null}
 
+            {alphabetMode && practiceLetter ? (
+              <div className="absolute bottom-2 left-2 z-10 max-w-[45%] border sm:bottom-4 sm:left-4 sm:max-w-none border-white/25 bg-black/75 px-3 py-2 backdrop-blur">
+                <p className="label !text-[8px]">practice letter {practiceLetter}</p>
+                <p className={cn("mt-1 text-sm font-medium", sign?.label === practiceLetter ? "text-emerald-300" : "text-white")}>
+                  {sign?.label === practiceLetter
+                    ? "That’s it! Hold to lock it."
+                    : sign?.label
+                      ? `Camera sees ${sign.label} — try ${practiceLetter}`
+                      : `Make ${practiceLetter} from the chart`}
+                </p>
+              </div>
+            ) : null}
+
+            {numberMode && practiceNumber ? (
+              <div className="absolute bottom-2 left-2 z-10 max-w-[45%] border sm:bottom-4 sm:left-4 sm:max-w-none border-white/25 bg-black/75 px-3 py-2 backdrop-blur">
+                <p className="label !text-[8px]">practice number {practiceNumber}</p>
+                <p className={cn("mt-1 text-sm font-medium", sign?.label === practiceNumber ? "text-emerald-300" : "text-white")}>
+                  {sign?.label === practiceNumber
+                    ? "That’s it! Hold to lock it."
+                    : sign?.label
+                      ? `Camera sees ${sign.label} — try ${practiceNumber}`
+                      : `Make ${practiceNumber} from the chart`}
+                </p>
+              </div>
+            ) : null}
+
             <HoldRing
               ringRef={ringRef}
               dwellMs={runtime.combo ? Math.max(dwellMs, 500) : dwellMs}
@@ -298,22 +514,97 @@ function CameraSurface({
             />
 
             <p className="label pointer-events-none absolute bottom-4 right-4 z-10 hidden bg-black/50 px-2 py-1 !text-[8px] backdrop-blur sm:block">
-              {alphabetMode ? "ASL fingerspelling + Wow pose" : "starter gestures · not sign language"}
+              {alphabetMode
+                ? alphabetModel === "pretrained"
+                  ? "ASL fingerspelling · pretrained MLP (CC BY-NC)"
+                  : "ASL fingerspelling + Wow pose · dataset kNN"
+                : numberMode
+                  ? "ASL numbers · 1–10"
+                  : "starter gestures · not sign language"}
             </p>
           </>
         ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/15 px-4 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/15 px-3 py-2.5 sm:px-4">
         <p className="text-xs text-white/50">
-          {alphabetMode
-            ? "Hold one static ASL letter pose until the ring fills. Nothing is stored or uploaded."
-            : "Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or uploaded."}
+          {words
+            ? "Always recording — sign ASL words one after another. 250-word vocabulary, and it can be wrong."
+            : alphabetMode
+              ? "Hold one static ASL letter pose until the ring fills. Nothing is stored or uploaded."
+              : numberMode
+                ? "Hold one static ASL number pose until the ring fills. Nothing is stored or uploaded."
+                : "Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or uploaded."}
         </p>
         <p className="label !text-[9px]">
-          {alphabetMode ? "ASL alphabet · static A–Z poses + Wow · keys A–Z" : "keys 1–9 = phrases"}
+          {words
+            ? "asl-signs · 250 words · always on"
+            : knnAlphabet
+              ? "ASL alphabet · static A–Z poses + Wow · keys A–Z"
+              : alphabetMode
+                ? "ASL alphabet · static A–Z poses · keys A–Z"
+                : numberMode
+                  ? "ASL numbers · static 1–10 handshapes"
+                  : "keys 1–9 = phrases"}
         </p>
       </div>
     </PixelPanel>
+  );
+}
+
+function AslOverlay({
+  handsVisible,
+  message,
+  guesses,
+}: {
+  handsVisible: number;
+  message: string;
+  guesses: WordGuess[] | null;
+}) {
+  return (
+    <>
+      <div className="absolute left-2 top-2 z-10 sm:left-4 sm:top-4">
+        <span className="label flex items-center gap-2 bg-black/60 px-2 py-1 !text-[9px] backdrop-blur">
+          <span
+            className={cn("h-1.5 w-1.5 rounded-full", handsVisible > 0 ? "bg-emerald-400" : "bg-white/40")}
+          />
+          {handsVisible === 0
+            ? "searching for hands"
+            : `${handsVisible} hand${handsVisible > 1 ? "s" : ""} detected`}
+        </span>
+        <span className="label mt-1.5 flex items-center gap-1.5 bg-black/60 px-2 py-1 !text-[9px] !text-accent backdrop-blur">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent pulse-dot" /> recording
+        </span>
+      </div>
+
+      <div className="absolute right-2 top-2 z-10 w-[11rem] space-y-1.5 sm:right-4 sm:top-4 sm:w-[13rem] border border-white/30 bg-black/70 px-3 py-2 backdrop-blur">
+        <p className="label !text-[8px]">
+          live top 3
+        </p>
+        {guesses
+          ? guesses.map((guess, index) => (
+              <div key={guess.gloss} className="block w-full text-left">
+                <span className="flex items-center justify-between gap-2">
+                  <span className={cn("text-xs", index === 0 ? "font-medium text-white" : "text-white/60")}>
+                    {guess.gloss}
+                  </span>
+                  <span className="label !text-[8px]">{Math.round(guess.probability * 100)}%</span>
+                </span>
+                <span className="mt-1 block h-1 w-full bg-white/15">
+                  <span
+                    className="block h-full bg-accent"
+                    style={{ width: `${Math.round(guess.probability * 100)}%` }}
+                  />
+                </span>
+              </div>
+            ))
+          : null}
+        <p className="text-[10px] leading-snug text-white/50">{message}</p>
+      </div>
+
+      <p className="label pointer-events-none absolute bottom-4 right-4 z-10 hidden bg-black/50 px-2 py-1 !text-[8px] backdrop-blur sm:block">
+        asl-signs model · 250 words · may be wrong
+      </p>
+    </>
   );
 }
