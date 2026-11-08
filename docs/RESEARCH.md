@@ -20,8 +20,9 @@ Checked against the npm registry and official docs. Pin exact versions after ins
 | `three` | 0.187.0 | |
 | `@react-three/fiber` | 9.8.2 | React 19 compatible |
 | `@react-three/drei` | 10.7.9 | `AsciiRenderer`, `ContactShadows`, controls |
-| `@react-three/postprocessing` | 3.2.2 | optional; skip by default |
-| `lenis` | 1.3.27 | optional smooth scroll |
+| `@mediapipe/tasks-vision` | 1.2.2 | HandLandmarker / GestureRecognizer |
+| `@google/genai` | 3.0.0 | Gemini SDK |
+| `@elevenlabs/react` | 1.21.1 | Scribe hook |
 
 Skiper UI's documented prerequisites: Next.js, Tailwind, React, Motion (`framer-motion`), GSAP, `clsx`, `tailwind-merge`, `lucide-react`, `react-use-measure`. Its free components require attribution; Pro components are paid. We use it as inspiration and build original components.
 
@@ -39,10 +40,11 @@ Skiper UI's documented prerequisites: Next.js, Tailwind, React, Motion (`framer-
 
 ## R2 — MediaPipe (P1)
 
-- GestureRecognizer in a Web Worker inside Next.js versus main thread.
-- GPU delegate support and behaviour.
+- HandLandmarker vs GestureRecognizer in VIDEO mode inside Next.js.
+- Worker versus main thread. GPU delegate support.
 - Frame rate on the demo laptop.
 - Lighting tests in the actual venue.
+- Self-hosted wasm + model paths.
 
 **Status:** open
 **Findings:**
@@ -50,24 +52,26 @@ Skiper UI's documented prerequisites: Next.js, Tailwind, React, Motion (`framer-
 
 ## R3 — Gemini (P2)
 
-- Exact current free Flash model ID in AI Studio.
-- Structured JSON output parameters in `@google/genai`.
-- Rate limits.
+- Exact current free Flash model ID on our key. Docs list `gemini-3.8-flash` (stable) and `gemini-3.5-flash-lite`.
+- Free-tier rate limits and quota.
+- Structured JSON output parameters in `@google/genai` 3.0.0 (`responseMimeType`, `responseSchema`).
+- Confirm the model accepts a compact numeric landmark summary and returns the schema.
+- Timeout behaviour and error shapes.
 
-**Status:** open
-**Findings:**
-**Links:**
+**Status:** in progress
+**Findings:** The model docs on Nov 7, 2026 list Gemini 3.8 Flash as the current stable Flash model, with text/image/audio/video/PDF input. Gemini 2.5 is deprecated. Use `GEMINI_MODEL=gemini-3.8-flash` and verify on our key.
+**Links:** https://ai.google.dev/gemini-api/docs/models
 
-## R4 — DeepSpace (P4)
+## R4 — Gemini multimodal and privacy (P2 + P4)
 
-- Can it hold server-side secrets or run a route that calls ElevenLabs?
-- Realtime records?
-- Deploy URL?
-- Go/no-go decision with evidence.
+- Can Gemini accept an image or a short video clip? Yes, per the model docs.
+- Do we send pixels? **No, by default.** Landmarks only. A single still frame is opt-in and off by default.
+- If still-frame sharing ships: confirm the exact request shape, the downscale step, and the updated privacy copy.
+- Never stream video to Gemini Live for this build.
 
-**Status:** open
-**Findings:**
-**Links:**
+**Status:** in progress
+**Findings:** Multimodal input is available, but using it would break the "video never leaves the browser" promise. Default to landmarks + text.
+**Links:** https://ai.google.dev/gemini-api/docs/models
 
 ## R5 — n8n Cloud (P4)
 
@@ -81,7 +85,7 @@ Skiper UI's documented prerequisites: Next.js, Tailwind, React, Motion (`framer-
 ## R6 — Accessibility (P3)
 
 - axe or Lighthouse checks.
-- ARIA live region behaviour for captions.
+- ARIA live region behaviour for the transcript and captions.
 - Contrast checks for all three themes (at least 4.5:1).
 - Atkinson Hyperlegible via `next/font/google`.
 
@@ -102,16 +106,18 @@ Skiper UI's documented prerequisites: Next.js, Tailwind, React, Motion (`framer-
 ## R8 — Browser support (all)
 
 - Web Speech API fallback and camera permissions on Chrome and one other browser.
+- `getUserMedia` behaviour on iOS Safari.
 
 **Status:** open
 **Findings:**
 **Links:**
 
-## R9 — Sign vocabulary (Phase 3 only)
+## R9 — Sign vocabulary (P1 + P4)
 
-- Confirm each sign from reliable sources or a signer.
+- Confirm each demo sign from a reliable source or a signer.
 - Check any public dataset license before using it.
 - Do not demo signs we cannot verify.
+- Record which signs the demo uses and who verified them.
 
 **Status:** open
 **Findings:**
@@ -123,7 +129,6 @@ Skiper UI's documented prerequisites: Next.js, Tailwind, React, Motion (`framer-
 - Confirm GSAP ScrollTrigger integration with React 19 (cleanup, `useGSAP`).
 - Confirm R3F 9 + Drei 10 work with React 19 and Next 16 (`dynamic` + `ssr: false`).
 - Measure bundle size of Three.js on the landing route.
-- Decide Motion vs GSAP per effect: Motion for UI and scroll-linked values; GSAP only for complex timelines.
 - Confirm Lenis does not fight native scroll or accessibility.
 
 **Status:** in progress
@@ -132,11 +137,11 @@ Skiper UI's documented prerequisites: Next.js, Tailwind, React, Motion (`framer-
 
 ## R11 — Motion performance and accessibility (P3 + P4)
 
-- 60fps on the demo laptop with the voxel hero and scroll effects.
+- 60fps on the demo laptop with the voxel backdrop and scroll effects.
 - `prefers-reduced-motion` behaviour for every effect.
-- Keyboard access for the coverflow, cube grid, and dynamic island.
+- Keyboard access for the pipeline demo, cube grid, and dynamic island.
 - axe/Lighthouse results for `/` and `/app`.
-- Behavior on a lower-end phone.
+- Behaviour on a lower-end phone.
 
 **Status:** open
 **Findings:**
@@ -152,3 +157,38 @@ Skiper UI's documented prerequisites: Next.js, Tailwind, React, Motion (`framer-
 **Status:** in progress
 **Findings:** Skiper UI is a shadcn registry built on Next.js, Tailwind, Motion, and GSAP. Free components require attribution; Pro requires a license.
 **Links:** https://skiper-ui.com/docs/quick-start · https://skiper-ui.com/
+
+## R13 — Gist quality (P2 + P3 + P4)
+
+- Test the prompt with real signers if possible. At minimum, test with 3 people making the demo signs.
+- Measure: does the gist stay faithful? Does it invent facts?
+- Tune the confidence threshold (start at 0.6).
+- Decide when to show "Not sure" instead of a sentence.
+- Record 5 example inputs and outputs for the Devpost.
+
+**Status:** open
+**Findings:**
+**Links:**
+
+## R14 — Capture UX (P1 + P3)
+
+- How long should a capture be? Start at 3 s; test 2–4 s.
+- Does the signer know when to start and stop? Countdown + ring.
+- What happens if no hand is detected? Clear retry.
+- Does the listener need a second screen? Keep one device for the demo.
+
+**Status:** open
+**Findings:**
+**Links:**
+
+## R15 — Honesty review (P4 + all)
+
+- Read every user-facing string. Remove "translator", "translation", "understands sign language".
+- Confirm "AI gist — please confirm" appears wherever an AI sentence appears.
+- Confirm "not a substitute for a human interpreter" appears on both routes.
+- Confirm no invented statistics or quotes.
+- Confirm the privacy copy matches what the network tab shows.
+
+**Status:** open
+**Findings:**
+**Links:**

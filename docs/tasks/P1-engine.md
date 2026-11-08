@@ -1,43 +1,52 @@
 # P1 — Engine
 
-**Mission:** turn the camera into reliable `GestureEvent`s, on-device, and make teach-a-gesture feel instant.
+**Mission:** turn the camera into a reliable `SignCapture` on-device: hand landmarks, a short capture buffer, and coarse candidates. Video never leaves the browser.
 
-Read first: [../SPEC.md](../SPEC.md) · [../ARCHITECTURE.md](../ARCHITECTURE.md) · [../DESIGN.md](../DESIGN.md) · [../ROADMAP.md](../ROADMAP.md) · [README.md](README.md)
+Read first: [../SPEC.md](../SPEC.md) · [../RESOURCES.md](../RESOURCES.md) · [../ARCHITECTURE.md](../ARCHITECTURE.md) · [../DESIGN.md](../DESIGN.md) · [../ROADMAP.md](../ROADMAP.md)
 
 ## Files you own
 
 ```
 src/engine/camera.ts
+src/engine/hand-landmarker.ts
 src/engine/recognizer.worker.ts     # optional; main-thread fallback first
 src/engine/normalize.ts
-src/engine/knn.ts
-src/engine/hold.ts
-src/engine/useGestures.ts
-src/components/CameraPanel.tsx
-src/components/HoldRing.tsx
+src/engine/capture.ts
+src/engine/useSignCapture.ts
+src/components/mocks/sign-camera.tsx   # replace the mock behind ports.ts
 ```
 
 Do not edit `contracts.ts`, `page.tsx`, `ports.ts`, or P2's files. Ask first.
 
 ## Interfaces you expose
 
-From `src/components/CameraPanel.tsx`:
+From `src/lib/contracts.ts`:
 
 ```ts
-CameraPanel(props: CameraPanelProps)
-```
+export type Candidate = { label: string; confidence: number };
 
-`CameraPanelProps` is defined in `src/lib/contracts.ts`:
+export type SignCapture = {
+  context: ContextId;
+  frames: number;
+  durationMs: number;
+  candidates: Candidate[];
+  summary?: number[];
+};
 
-```ts
-type CameraPanelProps = {
-  dwellMs: number;
+export type CaptureStatus =
+  | "idle"
+  | "starting"
+  | "watching"
+  | "capturing"
+  | "ready"
+  | "denied"
+  | "error";
+
+export type SignCameraProps = {
+  captureMs: number;
   enabled: boolean;
-  onLock: (e: GestureEvent) => void;
-  onStatus?: (s: GestureStatus) => void;
-  teach?: TeachRequest | null;
-  onTaught?: (p: Phrase) => void;
-  onTeachCancel?: () => void;
+  onCapture: (capture: SignCapture) => void;
+  onStatus?: (s: CaptureStatus) => void;
 };
 ```
 
@@ -47,71 +56,69 @@ Keep this signature stable. P3 wires it through `ports.ts`.
 
 ### P1.0 — Algorithms and tests (T+0–0:45)
 
-- [ ] Write `normalize.ts`: translate to wrist origin, scale by wrist→middle-finger-MCP distance, mirror left hands, flatten 21×3 to 63 floats.
-- [ ] Write `knn.ts`: k = 5, mean neighbour distance, rejection threshold, `unknown` result.
-- [ ] Write `hold.ts`: majority vote over 8 frames, confidence ≥ 0.6, dwell timer, 600 ms cooldown.
-- [ ] Write vitest tests for all three before wiring the camera.
-- [ ] Edge cases: missing landmarks, zero scale, NaN, left/right hand.
+- [ ] `normalize.ts`: translate to wrist origin, scale by wrist→middle-finger-MCP distance, mirror left hands, flatten 21×3 to 63 floats.
+- [ ] `capture.ts`: a ring buffer of N frames; produce a compact `summary` by downsampling (e.g. every 4th frame, then a fixed-length vector).
+- [ ] `capture.ts`: majority vote over the last 8 frames for coarse candidates; confidence threshold 0.6.
+- [ ] Vitest tests: missing landmarks, zero scale, NaN, left/right hand, empty capture.
+- [ ] Decide the summary length and document it (target ≤ 256 numbers).
 
 **Done when:** `npm run test` passes with tests that would fail on a broken implementation.
 
 ### P1.1 — Camera and landmarks (T+0:45–2:30)
 
 - [ ] `camera.ts`: request `getUserMedia`, mirror preview, cleanup on unmount.
-- [ ] Load `@mediapipe/tasks-vision` GestureRecognizer in VIDEO mode.
-- [ ] Use the self-hosted model at `/models/gesture_recognizer.task` and wasm at `/mediapipe/wasm`.
+- [ ] Load `@mediapipe/tasks-vision` HandLandmarker in VIDEO mode.
+- [ ] Use the self-hosted model at `/models/hand_landmarker.task` and wasm at `/mediapipe/wasm`.
+- [ ] Optionally run GestureRecognizer for coarse labels.
 - [ ] Start on the main thread, every 2nd frame. Move to a worker only if perf is clearly bad.
 - [ ] Skeleton overlay on a canvas, mirrored, cyan glow, amber when uncertain.
-- [ ] Status states: `idle`, `starting`, `ready`, `denied`, `error`.
-- [ ] Live candidate: top label + confidence, stabilized by the majority vote.
+- [ ] Status states: `idle`, `starting`, `watching`, `denied`, `error`.
 - [ ] Ignore `None`.
 
-**Done when:** landmarks and a stable candidate are visible at 15+ fps; denied/error states are clear.
+**Done when:** landmarks are visible at 15+ fps; denied/error states are clear.
 
-### P1.2 — Hold-to-lock (T+2:30–4:00)
+### P1.2 — Capture buffer (T+2:30–4:00)
 
-- [ ] Integrate `hold.ts` with the live candidate.
-- [ ] `HoldRing`: smooth circular progress, dwell from props, no layout thrash.
-- [ ] Fire `onLock` once per hold; reset after cooldown.
-- [ ] Confidence threshold 0.6 for built-in gestures.
-- [ ] No duplicate locks when the hand stays still.
+- [ ] When capture starts, record ~2–4 s of normalized landmarks.
+- [ ] Show a smooth progress ring driven by elapsed time, not layout thrash.
+- [ ] Produce a `SignCapture` with `frames`, `durationMs`, `candidates`, `summary`.
+- [ ] Fire `onCapture` exactly once per capture.
+- [ ] Handle "no hand detected": return a clear error state, not an empty gist.
+- [ ] Add a 600 ms cooldown after a capture.
 
-**Done when:** holding for 900 ms produces exactly one `GestureEvent`; releasing and re-holding works.
+**Done when:** a 3 s capture produces a stable `SignCapture`; releasing and recapturing works.
 
-### P1.3 — Teach-a-gesture (T+4:00–7:30)
+### P1.3 — Demo mode (T+4:00–4:30)
 
-- [ ] When `teach` is set, record ~30 frames of normalized landmarks.
-- [ ] Save samples + label via P3's `storage.ts` (coordinate the key).
-- [ ] Match with kNN; reject below the calibrated threshold as `unknown`.
-- [ ] Call `onTaught` with a `Phrase`; call `onTeachCancel` on cancel.
-- [ ] Keep the built-in gestures working alongside custom ones.
-- [ ] Calibrate the threshold with at least 2 people, 3 reps each.
+- [ ] Keep the typed mock behind `ports.ts` working.
+- [ ] Expose a way to dispatch a deterministic capture for keyboard demos (Space triggers the same path).
+- [ ] Make sure the demo works with the camera denied.
 
-**Done when:** teach a new gesture in under 30 seconds and use it immediately; a random pose is rejected.
+**Done when:** the camera path and the demo path produce the same `SignCapture` shape.
 
-### P1.4 — Integration and polish (T+7:30–8:00, T+13:30–16:00)
+### P1.4 — Integration and polish (T+4:30–8:00, T+13:30–16:00)
 
 - [ ] Fix integration bugs with P3.
-- [ ] Keyboard demo mode support: expose a way to dispatch the same `GestureEvent` for keys 1–7. P3 owns the keys; you own the event shape.
 - [ ] Venue lighting test.
 - [ ] Perf pass: frame skipping, canvas size, DPR.
 - [ ] Error copy is honest and actionable.
+- [ ] Confirm no frame or video data is sent anywhere. Check the network tab.
 
-**Done when:** the camera path and the keyboard path produce identical events; demo works under venue lighting.
+**Done when:** the conversation loop runs twice in a row under venue lighting.
 
 ## Technical notes
 
-- Camera and mic need HTTPS or `localhost`.
+- Camera needs HTTPS or `localhost`.
 - Self-host the model and wasm. Do not rely on venue Wi-Fi.
 - If worker setup takes more than 45 minutes, stay on the main thread. Ship first.
-- Normalization must be identical for training and matching.
-- kNN threshold is a product decision: too strict feels broken, too loose says the wrong thing. Show `unknown` rather than guessing.
-- Never auto-speak. `onLock` only adds a candidate; the user confirms.
-- No Phase 3 DTW matcher in this task. It is a cut item.
+- Normalization must be identical for capture and any future matching.
+- Show `unknown` rather than guessing.
+- Never auto-speak. `onCapture` only produces a capture; P3 confirms.
+- Do not send pixels to the server. Only the numeric summary and candidates.
 
 ## Guardrails
 
-- Do not claim sign-language translation. Labels are "Starter gestures".
+- Do not claim sign-language translation. Labels are "AI gist".
 - Do not send frames to the server.
 - Do not edit `page.tsx`; P3 owns it.
 - Do not add a dependency without telling P4.
@@ -131,5 +138,5 @@ npm run setup:assets
 
 - Files changed
 - How to run it
-- Evidence: fps, lock behavior, teach result
+- Evidence: fps, capture length, candidate stability, no network frames
 - Open questions

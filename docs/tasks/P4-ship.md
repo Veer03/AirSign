@@ -1,8 +1,8 @@
 # P4 — Base/Ship
 
-**Mission:** unblock the team in the first hour, keep `main` green and deployed, and turn the build into a submission that wins.
+**Mission:** unblock the team in the first hour, keep `main` green and deployed, and turn the build into a submission that wins on honesty and craft.
 
-Read first: [../SPEC.md](../SPEC.md) · [../ARCHITECTURE.md](../ARCHITECTURE.md) · [../DESIGN.md](../DESIGN.md) · [../ROADMAP.md](../ROADMAP.md) · [README.md](README.md)
+Read first: [../SPEC.md](../SPEC.md) · [../RESOURCES.md](../RESOURCES.md) · [../ARCHITECTURE.md](../ARCHITECTURE.md) · [../DESIGN.md](../DESIGN.md) · [../ROADMAP.md](../ROADMAP.md)
 
 ## Files you own
 
@@ -20,32 +20,17 @@ Do not edit P1/P2/P3 source files. You are the release manager, not a second UI 
 
 ## Backlog
 
-### P4.0 — Bootstrap (T+0–0:45)
+### P4.0 — Bootstrap (done)
 
-The repo already has `docs/`, `README.md`, `.gitignore`, and a docs commit. `create-next-app .` may refuse to run in a non-empty folder.
-
-- [ ] Scaffold in a temp folder (e.g. `%TEMP%/airsign-scaffold`), then copy `src/`, `package.json`, configs into the repo.
-- [ ] Keep the existing `docs/`, `README.md`, and `.gitignore`; merge additions instead of overwriting.
-- [ ] TypeScript strict, App Router, `src/`, alias `@/*`.
-- [ ] Install runtime deps:
-
-```bash
-npm i @mediapipe/tasks-vision @elevenlabs/react @google/genai idb-keyval zod \
-  lucide-react motion gsap three @react-three/fiber @react-three/drei lenis \
-  clsx tailwind-merge react-use-measure
-```
-
-- [ ] Install dev deps: `vitest @vitest/coverage-v8 prettier`.
-- [ ] `npx shadcn@latest init`; add button, card, slider, switch, select, badge, progress, tooltip, sonner.
-- [ ] Create `src/lib/contracts.ts` from `SPEC.md` section 5, `src/lib/flags.ts`, `.env.example`, `scripts/setup-assets.mjs`.
-- [ ] Add npm scripts: `dev`, `build`, `start`, `lint`, `typecheck`, `test`, `setup:assets`.
-- [ ] Commit, push `main`, tell the team to clone.
-
-**Done when:** `npm run dev` works from a fresh clone; `main` is pushed; everyone can start.
+- [x] Scaffold Next.js 16, TypeScript strict, App Router, `src/`, alias `@/*`.
+- [x] Install runtime and dev deps; pin versions; commit the lockfile.
+- [x] shadcn/ui init; button, card, slider, switch, select, badge, progress, tooltip, sonner.
+- [x] Contracts, contexts, ports, mocks, flags, storage, tests.
+- [x] Docs commit and branches.
 
 ### P4.1 — Assets, docs, deploy (T+0:45–2:00)
 
-- [ ] `setup-assets.mjs`: copy wasm from `node_modules/@mediapipe/tasks-vision/wasm` to `public/mediapipe/wasm`; download `gesture_recognizer.task` to `public/models/` if missing; idempotent; clear messages.
+- [ ] `setup-assets.mjs`: copy wasm from `node_modules/@mediapipe/tasks-vision/wasm` to `public/mediapipe/wasm`; download `hand_landmarker.task` and `gesture_recognizer.task` to `public/models/` if missing; idempotent; clear messages.
 - [ ] `.gitignore`: `.env*` (keep `.env.example`), `.docdex/`, `public/models/*.task`, `public/mediapipe/`, `node_modules`, `.next`, `coverage`.
 - [ ] Deploy a hello page to Render or Vercel. HTTPS works.
 - [ ] Set env vars in the dashboard (names only in the repo).
@@ -59,6 +44,7 @@ This is a judging criterion, not a side quest.
 
 - [ ] 3 short interviews (Deaf/HoH participants, accessibility mentors, or interpreters). 5 minutes each. Ask: "What is the hardest 30-second interaction without an interpreter?" Record paraphrases with permission.
 - [ ] 2 real citations for the problem. No invented statistics.
+- [ ] Confirm which signs the demo uses and who verified them (R9).
 - [ ] Draft Devpost: problem, solution, impact, accessibility, honest limitations, one paragraph per prize.
 - [ ] Draft the 3-minute demo script (see `ROADMAP.md`).
 - [ ] Collect the Figma link from P3.
@@ -80,9 +66,10 @@ This is a judging criterion, not a side quest.
 
 - [ ] Two-device test: demo laptop + one other browser.
 - [ ] Venue lighting and camera test.
-- [ ] Network tab proof: only text leaves the browser.
-- [ ] Keyboard-only pass.
+- [ ] Network tab proof: only landmark summaries and text leave the browser.
+- [ ] Keyboard-only pass: Space capture, Enter speak, R reply, C clear.
 - [ ] Reduced-motion pass.
+- [ ] Low-confidence pass: force `uncertain` and check the "Not sure" UI.
 - [ ] Rough backup video of the demo path.
 - [ ] Fix or file blockers with owners.
 
@@ -110,7 +97,7 @@ This is a judging criterion, not a side quest.
 
 ## Research to verify
 
-See [../RESEARCH.md](../RESEARCH.md): R4 DeepSpace, R5 n8n, R7 deploy, R8 browser support, R11 performance.
+See [../RESEARCH.md](../RESEARCH.md): R3 Gemini, R4 multimodal/privacy, R7 deploy, R8 browser support, R9 sign vocabulary, R11 performance, R15 honesty review.
 
 ## Guardrails
 
@@ -119,6 +106,7 @@ See [../RESEARCH.md](../RESEARCH.md): R4 DeepSpace, R5 n8n, R7 deploy, R8 browse
 - Do not claim "interpreter", "translation", or "ASL translator".
 - Do not merge a red `main`.
 - Do not add DeepSpace or n8n unless they do a real job in a real flow.
+- Every AI sentence says "AI gist — please confirm".
 
 ## Commands
 
