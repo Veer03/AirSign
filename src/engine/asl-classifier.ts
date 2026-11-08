@@ -1,7 +1,7 @@
 "use client";
 
 import { FRAME_POINTS, stackFrames } from "./holistic-frame";
-import { createInferenceSession, loadOrt, softmax } from "./ort";
+import { loadWasmOrt, softmax } from "./ort";
 
 /**
  * Kaggle asl-signs (250 isolated signs) classifier, ONNX build of the
@@ -23,10 +23,15 @@ const LABELS_URL = "/models/asl_signs_labels.json";
 let classifierPromise: Promise<Classifier> | null = null;
 
 async function createClassifier(): Promise<Classifier> {
-  const ort = await loadOrt();
+  // Keep ASL word inference on the WASM backend. The recent WebGPU switch made
+  // this temporal model slower and less reliable on some browser/GPU combos.
+  const ort = await loadWasmOrt();
 
   const [session, signToIndex] = await Promise.all([
-    createInferenceSession(MODEL_URL, { graphOptimizationLevel: "all" }),
+    ort.InferenceSession.create(MODEL_URL, {
+      executionProviders: ["wasm"],
+      graphOptimizationLevel: "all",
+    }),
     fetch(LABELS_URL).then((response) => {
       if (!response.ok) throw new Error(`labels ${response.status}`);
       return response.json() as Promise<Record<string, number>>;

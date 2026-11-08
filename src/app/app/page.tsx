@@ -35,6 +35,8 @@ export default function WorkspacePage() {
   const [numberMode, setNumberMode] = useState(false);
   const [wordsMode, setWordsMode] = useState(false);
   const [customMode, setCustomMode] = useState(false);
+  const [showPrivateGestureToggle, setShowPrivateGestureToggle] = useState(false);
+  const [privateGesturesEnabled, setPrivateGesturesEnabled] = useState(false);
   const [customGestures, setCustomGestures] = useState<StoredCustomGesture[]>([]);
   const [customGesturesLoaded, setCustomGesturesLoaded] = useState(false);
   const [customDraftPhrase, setCustomDraftPhrase] = useState("");
@@ -295,6 +297,20 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // Private switch reveal: Ctrl+Alt+Shift+F. This is intentionally a
+      // discreet UI shortcut, not an authentication boundary.
+      if (
+        process.env.NODE_ENV === "development" &&
+        !event.repeat &&
+        event.ctrlKey &&
+        event.altKey &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "f"
+      ) {
+        event.preventDefault();
+        setShowPrivateGestureToggle((visible) => !visible);
+        return;
+      }
       if (event.repeat) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
@@ -306,13 +322,14 @@ export default function WorkspacePage() {
           : undefined;
       const phrase = alphabetKey ?? phraseForKey(event.key);
       if (!phrase) return;
+      if (phrase.gesture === "Middle_Finger" && !privateGesturesEnabled) return;
       event.preventDefault();
       handleLock(makeGestureEvent(phrase, 1, "keyboard"));
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [alphabetMode, handleLock]);
+  }, [alphabetMode, handleLock, privateGesturesEnabled]);
 
   const speakSentence = useCallback(() => {
     const sentence = chips.map((chip) => chip.phrase).join(". ");
@@ -413,6 +430,7 @@ export default function WorkspacePage() {
 
           <CameraPanel
             enabled={cameraOn}
+            allowProfanity={privateGesturesEnabled}
             dwellMs={settings.dwellMs}
             repeatMs={settings.repeatMs}
             twoHands={settings.twoHands}
@@ -446,6 +464,9 @@ export default function WorkspacePage() {
               settings={settings}
               onChange={updateSettings}
               voiceConfigured={voiceConfigured}
+              showPrivateGestureToggle={showPrivateGestureToggle}
+              privateGesturesEnabled={privateGesturesEnabled}
+              onPrivateGesturesChange={setPrivateGesturesEnabled}
             />
           </PixelPanel>
 

@@ -41,6 +41,8 @@ type LockHandler = (lock: SignLock) => void;
 
 export type UseGesturesOptions = {
   enabled: boolean;
+  /** Enable the otherwise suppressed middle-finger starter phrase/combo. */
+  allowProfanity?: boolean;
   dwellMs: number;
   /** How long the same held signal must wait before it can speak again. */
   repeatMs: number;
@@ -190,6 +192,7 @@ export function useGestures(options: UseGesturesOptions) {
   const customConfidence = options.customConfidence ?? 0.2;
   const customGestures = options.customGestures ?? [];
   const prewarm = options.prewarm ?? true;
+  const allowProfanity = options.allowProfanity ?? false;
   const facing: CameraFacing = options.facing ?? "user";
 
   const [runtime, setRuntime] = useState<GestureRuntime>({
@@ -210,6 +213,7 @@ export function useGestures(options: UseGesturesOptions) {
   const alphabetModelRef = useRef<AlphabetModel>(alphabetModel);
   const numberModeRef = useRef(numberMode);
   const customModeRef = useRef(customMode);
+  const allowProfanityRef = useRef(allowProfanity);
   const customConfidenceRef = useRef(customConfidence);
   const customGesturesRef = useRef(customGestures);
   const alphabetErrorRef = useRef(false);
@@ -221,6 +225,10 @@ export function useGestures(options: UseGesturesOptions) {
   const customLastClassifyAtRef = useRef(0);
   const customMatchRef = useRef<ReturnType<typeof classifyCustomGesture>>(null);
   const zoomRef = useRef({ cx: 0.5, cy: 0.5, z: 1, primed: false });
+
+  // This preference is read on every frame so changing the hidden switch
+  // takes effect without restarting the camera or tracker.
+  allowProfanityRef.current = allowProfanity;
 
   useEffect(() => {
     onLockRef.current = onLock;
@@ -452,12 +460,20 @@ export function useGestures(options: UseGesturesOptions) {
 
             const frame = detect(recognizer, video, now);
             const tracked = trackerRef.current.update(frame.hands, now);
+            const recognitionHands =
+              allowProfanityRef.current || customModeRef.current
+                ? tracked
+                : tracked.map((hand) =>
+                    hand.gesture === "Middle_Finger"
+                      ? { ...hand, gesture: "None", confidence: 0 }
+                      : hand,
+                  );
             // Alphabet mode is strictly A–Z for both classifiers. Special poses
             // are available in the general starter mode only.
             const specialPoses = !alphabetModeRef.current;
             const specialHands = (gesture: string) =>
               specialPoses
-                ? tracked.filter((hand) => hand.gesture === gesture && hand.confidence >= 0.5)
+                ? recognitionHands.filter((hand) => hand.gesture === gesture && hand.confidence >= 0.5)
                 : [];
             const wowHands = specialHands("Wow");
             const fingerHeartHands = specialHands("Finger_Heart");
@@ -481,17 +497,17 @@ export function useGestures(options: UseGesturesOptions) {
                 !hasDoubleMiddleFinger);
             const usable =
               customModeRef.current
-                ? tracked
+                ? recognitionHands
                     .filter((hand): hand is TrackedHand => Array.isArray(hand.landmarks) && hand.landmarks.length >= 21)
                     .slice(0, 2)
                 : alphabetModeRef.current && alphabetSpecialHands.length > 0
                   ? alphabetSpecialHands
                   : useOneHand
-                    ? [tracked.reduce<TrackedHand | null>(
+                      ? [recognitionHands.reduce<TrackedHand | null>(
                         (best, hand) => (!best || hand.confidence > best.confidence ? hand : best),
                         null,
                       )].filter((hand): hand is TrackedHand => hand !== null)
-                    : tracked;
+                    : recognitionHands;
 
             const landmarkFrame = {
               t: now,

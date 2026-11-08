@@ -19,6 +19,7 @@ import { PixelPanel } from "./PixelPanel";
 
 type CameraPanelProps = {
   enabled: boolean;
+  allowProfanity?: boolean;
   dwellMs: number;
   /** Wait before the same held signal can speak again. */
   repeatMs: number;
@@ -81,6 +82,7 @@ function sideTag(side: HandCandidate["side"]) {
 
 function CameraSurface({
   enabled,
+  allowProfanity = false,
   dwellMs,
   repeatMs,
   twoHands,
@@ -319,6 +321,7 @@ function CameraSurface({
 
   const starterRuntime = useGestures({
     enabled: enabled && !words,
+    allowProfanity,
     dwellMs,
     repeatMs,
     twoHands,

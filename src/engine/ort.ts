@@ -23,10 +23,15 @@ function hasWebGpu(): boolean {
 function configure(ort: typeof Ort): typeof Ort {
   ort.env.wasm.wasmPaths = "/ort/";
   ort.env.wasm.numThreads = 1;
+  // ORT prints routine warnings (e.g. "some nodes were not assigned to the
+  // preferred execution providers" for shape ops it moves to CPU) through
+  // console.error. They are harmless, so only surface real errors.
+  ort.env.logLevel = "error";
   return ort;
 }
 
-function loadWasmOrt(): Promise<typeof Ort> {
+/** Load the stable WASM runtime for models that need predictable inference. */
+export function loadWasmOrt(): Promise<typeof Ort> {
   if (!wasmOrtPromise) {
     wasmOrtPromise = importAtRuntime(WASM_ORT_URL).then(configure).catch((error) => {
       wasmOrtPromise = null;
@@ -62,6 +67,7 @@ export async function createInferenceSession(
   if (hasWebGpu() && usingWebGpuRuntime) {
     try {
       return await ort.InferenceSession.create(modelUrl, {
+        logSeverityLevel: 3,
         ...options,
         executionProviders: ["webgpu", "wasm"],
       });
@@ -71,7 +77,7 @@ export async function createInferenceSession(
     }
   }
   const wasm = await loadWasmOrt();
-  return wasm.InferenceSession.create(modelUrl, { ...options, executionProviders: ["wasm"] });
+  return wasm.InferenceSession.create(modelUrl, { logSeverityLevel: 3, ...options, executionProviders: ["wasm"] });
 }
 
 export function softmax(logits: ArrayLike<number>): Float32Array {
