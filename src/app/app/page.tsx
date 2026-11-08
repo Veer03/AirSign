@@ -300,7 +300,6 @@ export default function WorkspacePage() {
       // Private switch reveal: Ctrl+Alt+Shift+F. This is intentionally a
       // discreet UI shortcut, not an authentication boundary.
       if (
-        process.env.NODE_ENV === "development" &&
         !event.repeat &&
         event.ctrlKey &&
         event.altKey &&
