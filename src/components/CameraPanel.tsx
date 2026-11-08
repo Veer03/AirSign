@@ -16,6 +16,9 @@ type CameraPanelProps = {
   repeatMs: number;
   twoHands: boolean;
   alphabetMode: boolean;
+  numberMode: boolean;
+  practiceLetter?: string | null;
+  practiceNumber?: string | null;
   onEnable: () => void;
   onDisable?: () => void;
   onLock: (event: GestureEvent) => void;
@@ -44,6 +47,9 @@ function CameraSurface({
   repeatMs,
   twoHands,
   alphabetMode,
+  numberMode,
+  practiceLetter,
+  practiceNumber,
   onEnable,
   onDisable,
   onLock,
@@ -67,6 +73,7 @@ function CameraSurface({
     repeatMs,
     twoHands,
     alphabetMode,
+    numberMode,
     onLock: handleLock,
     videoRef,
     canvasRef,
@@ -157,7 +164,9 @@ function CameraSurface({
               <p className="mt-2 text-sm text-white/60">
                 {alphabetMode
                   ? "Show one static ASL letter or the Wow pose, or press its A–Z key."
-                  : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
+                  : numberMode
+                    ? "Show one ASL number handshape from 1 to 10."
+                    : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
                 The video stays in this browser — only text is sent to the server.
               </p>
               <button
@@ -168,7 +177,7 @@ function CameraSurface({
                 <Camera className="h-4 w-4" /> Enable camera
               </button>
               <p className="label mt-4 !text-[9px]">
-                {alphabetMode ? "A–Z keys also work" : "or press keys 1–9"}
+                {alphabetMode ? "A–Z keys also work" : numberMode ? "Hold the pose to speak the number" : "or press keys 1–9"}
               </p>
             </div>
           </div>
@@ -209,14 +218,16 @@ function CameraSurface({
                     handCount > 0 ? "bg-emerald-400" : "bg-white/40",
                   )}
                 />
-                {alphabetMode
+                {alphabetMode || numberMode
                   ? sign?.phrase === "Wow!"
                     ? handCount === 2
                       ? "two Wow hands"
                       : "Wow sign"
                     : handCount === 0
                     ? "show one hand"
-                    : "ASL alphabet hand"
+                    : numberMode
+                      ? "ASL number hand"
+                      : "ASL alphabet hand"
                   : handCount === 0
                     ? "searching for hands"
                     : handCount === 1
@@ -290,6 +301,32 @@ function CameraSurface({
               </div>
             ) : null}
 
+            {alphabetMode && practiceLetter ? (
+              <div className="absolute bottom-4 left-4 z-10 border border-white/25 bg-black/75 px-3 py-2 backdrop-blur">
+                <p className="label !text-[8px]">practice letter {practiceLetter}</p>
+                <p className={cn("mt-1 text-sm font-medium", sign?.label === practiceLetter ? "text-emerald-300" : "text-white")}>
+                  {sign?.label === practiceLetter
+                    ? "That’s it! Hold to lock it."
+                    : sign?.label
+                      ? `Camera sees ${sign.label} — try ${practiceLetter}`
+                      : `Make ${practiceLetter} from the chart`}
+                </p>
+              </div>
+            ) : null}
+
+            {numberMode && practiceNumber ? (
+              <div className="absolute bottom-4 left-4 z-10 border border-white/25 bg-black/75 px-3 py-2 backdrop-blur">
+                <p className="label !text-[8px]">practice number {practiceNumber}</p>
+                <p className={cn("mt-1 text-sm font-medium", sign?.label === practiceNumber ? "text-emerald-300" : "text-white")}>
+                  {sign?.label === practiceNumber
+                    ? "That’s it! Hold to lock it."
+                    : sign?.label
+                      ? `Camera sees ${sign.label} — try ${practiceNumber}`
+                      : `Make ${practiceNumber} from the chart`}
+                </p>
+              </div>
+            ) : null}
+
             <HoldRing
               ringRef={ringRef}
               dwellMs={runtime.combo ? Math.max(dwellMs, 500) : dwellMs}
@@ -298,7 +335,11 @@ function CameraSurface({
             />
 
             <p className="label pointer-events-none absolute bottom-4 right-4 z-10 hidden bg-black/50 px-2 py-1 !text-[8px] backdrop-blur sm:block">
-              {alphabetMode ? "ASL fingerspelling + Wow pose" : "starter gestures · not sign language"}
+              {alphabetMode
+                ? "ASL fingerspelling + Wow pose"
+                : numberMode
+                  ? "ASL numbers · 1–10"
+                  : "starter gestures · not sign language"}
             </p>
           </>
         ) : null}
@@ -308,10 +349,16 @@ function CameraSurface({
         <p className="text-xs text-white/50">
           {alphabetMode
             ? "Hold one static ASL letter pose until the ring fills. Nothing is stored or uploaded."
+            : numberMode
+              ? "Hold one static ASL number pose until the ring fills. Nothing is stored or uploaded."
             : "Hold a pose for the ring to fill. One hand, or a matching pair. Nothing is stored or uploaded."}
         </p>
         <p className="label !text-[9px]">
-          {alphabetMode ? "ASL alphabet · static A–Z poses + Wow · keys A–Z" : "keys 1–9 = phrases"}
+          {alphabetMode
+            ? "ASL alphabet · static A–Z poses + Wow · keys A–Z"
+            : numberMode
+              ? "ASL numbers · static 1–10 handshapes"
+              : "keys 1–9 = phrases"}
         </p>
       </div>
     </PixelPanel>

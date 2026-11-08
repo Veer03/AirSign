@@ -194,6 +194,14 @@
   animation: beam-sweep 16s ease-in-out infinite;
 }
 
+/* Give the live camera and hand tracker more rendering headroom while active. */
+[data-camera-active="true"] .pixel-voxel,
+[data-camera-active="true"] .grid-drift,
+[data-camera-active="true"] .backdrop-beam,
+[data-camera-active="true"] .pulse-dot {
+  animation-play-state: paused;
+}
+
 /* ---------- marquee ---------- */
 
 .marquee {

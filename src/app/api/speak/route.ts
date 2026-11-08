@@ -51,7 +51,13 @@ export async function POST(request: Request) {
 
   const parsed = speakSchema.safeParse(body);
   if (!parsed.success) {
-    return error("bad_request", `Text must be 1–${MAX_TEXT} characters and voice must be warm, calm, or energetic.`, 400);
+    const invalidText = parsed.error.issues.some((issue) => issue.path[0] === "text");
+    const invalidVoice = parsed.error.issues.some((issue) => issue.path[0] === "voice");
+    const message = [
+      invalidText ? `Text must be 1–${MAX_TEXT} characters.` : null,
+      invalidVoice ? "Choose a supported voice: warm, calm, or energetic." : null,
+    ].filter(Boolean).join(" ");
+    return error("bad_request", message || "Invalid speech request.", 400);
   }
 
   const voiceId = ENV_VOICE_IDS[parsed.data.voice] || DEFAULT_VOICE_IDS[parsed.data.voice];
