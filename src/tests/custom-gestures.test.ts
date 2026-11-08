@@ -41,6 +41,14 @@ describe("detectCustomGesture", () => {
     ).toBeNull();
   });
 
+  it("detects a finger gun with thumb and index extended", () => {
+    const points = makeHand({ ...curled, index: true });
+    points[4] = { x: 0.64, y: 0.56, z: 0 };
+    const result = detectCustomGesture(points);
+    expect(result?.gesture).toBe("Gun");
+    expect(result?.confidence).toBeGreaterThanOrEqual(0.5);
+  });
+
   it("ignores a pointing-up hand", () => {
     expect(detectCustomGesture(makeHand({ ...curled, index: true }))).toBeNull();
   });

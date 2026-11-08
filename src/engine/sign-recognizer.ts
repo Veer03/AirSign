@@ -52,6 +52,7 @@ export class LocalStubRecognizer implements SignRecognizer {
           (hand) =>
             hand.gesture === "Wow" ||
             hand.gesture === "Finger_Heart" ||
+            hand.gesture === "Gun" ||
             hand.gesture === "Middle_Finger",
         );
         if (customHand) {

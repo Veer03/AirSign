@@ -21,7 +21,10 @@ export function SentenceStrip({
   speaking: SpeakState;
   autoSpeak: boolean;
 }) {
-  const sentence = chips.map((chip) => chip.phrase).join(". ");
+  const sentence = chips
+    .map((chip) => chip.phrase)
+    .filter((phrase) => phrase.trim().length > 0)
+    .join(". ");
 
   return (
     <PixelPanel className="flex min-h-[15rem] flex-col">

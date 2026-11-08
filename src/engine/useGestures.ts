@@ -387,6 +387,7 @@ export function useGestures(options: UseGesturesOptions) {
 
             const frame = detect(recognizer, video, now);
             const tracked = trackerRef.current.update(frame.hands, now);
+<<<<<<< Updated upstream
             // Special poses (Wow / finger heart / middle finger) override letters
             // in Harshpal's kNN alphabet only; the pretrained tab stays letters-only.
             const specialPoses = !alphabetModeRef.current || alphabetModelRef.current === "knn";
@@ -397,6 +398,20 @@ export function useGestures(options: UseGesturesOptions) {
             const wowHands = specialHands("Wow");
             const fingerHeartHands = specialHands("Finger_Heart");
             const middleFingerHands = specialHands("Middle_Finger");
+=======
+            const wowHands = tracked.filter(
+              (hand) => hand.gesture === "Wow" && hand.confidence >= 0.5,
+            );
+            const fingerHeartHands = tracked.filter(
+              (hand) => hand.gesture === "Finger_Heart" && hand.confidence >= 0.5,
+            );
+            const gunHands = tracked.filter(
+              (hand) => hand.gesture === "Gun" && hand.confidence >= 0.5,
+            );
+            const middleFingerHands = tracked.filter(
+              (hand) => hand.gesture === "Middle_Finger" && hand.confidence >= 0.5,
+            );
+>>>>>>> Stashed changes
             const hasDoubleWow = twoHandsRef.current && wowHands.length >= 2;
             const hasDoubleFingerHeart = twoHandsRef.current && fingerHeartHands.length >= 2;
             const hasDoubleMiddleFinger = twoHandsRef.current && middleFingerHands.length >= 2;
@@ -406,7 +421,9 @@ export function useGestures(options: UseGesturesOptions) {
                 ? fingerHeartHands.slice(0, 2)
                 : hasDoubleMiddleFinger
                   ? middleFingerHands.slice(0, 2)
-                  : fingerHeartHands.slice(0, 1);
+                  : fingerHeartHands.length > 0
+                    ? fingerHeartHands.slice(0, 1)
+                    : gunHands.slice(0, 1);
             const useOneHand =
               numberModeRef.current ||
               !twoHandsRef.current ||
