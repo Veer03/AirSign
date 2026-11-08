@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "setup:assets": "node scripts/setup-assets.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
