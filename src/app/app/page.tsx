@@ -163,11 +163,12 @@ export default function WorkspacePage() {
     <div
       data-reduced={settings.reducedMotion ? "true" : "false"}
       data-camera-active={cameraOn ? "true" : "false"}
+      data-theme="matte"
       className="relative min-h-screen"
     >
-      <PixelBackdrop />
+      <PixelBackdrop matte />
 
-      <header className="sticky top-0 z-30 border-b border-white/70 bg-black/90 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-white/70 bg-black/90">
         <div className="mx-auto flex h-[52px] max-w-[1500px] items-center justify-between gap-2 px-3 sm:gap-3 sm:px-4">
           <div className="flex items-center gap-4">
             <Link href="/" className="flex items-center gap-2.5">
