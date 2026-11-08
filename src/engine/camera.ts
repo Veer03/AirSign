@@ -79,10 +79,11 @@ export async function startCamera(
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: {
-      // "ideal" so desktops with one camera still fall back to it.
+      // Keep the source at the tracker’s useful working size on phones. An
+      // ideal-only request can still return full sensor resolution on mobile.
       facingMode: { ideal: facing },
-      width: { ideal: size.width },
-      height: { ideal: size.height },
+      width: { ideal: size.width, max: size.width },
+      height: { ideal: size.height, max: size.height },
       // Request smooth 30–40 fps capture where the camera supports it.
       frameRate: { ideal: 35, max: 40 },
     },

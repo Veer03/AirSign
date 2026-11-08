@@ -12,8 +12,16 @@ const wasmSrc = path.join(root, "node_modules", "@mediapipe", "tasks-vision", "w
 const wasmDest = path.join(root, "public", "mediapipe", "wasm");
 const ortSrc = path.join(root, "node_modules", "onnxruntime-web", "dist");
 const ortDest = path.join(root, "public", "ort");
-// Only the plain-wasm build: loaded at runtime so the bundler never touches it.
-const ortFiles = ["ort.wasm.min.mjs", "ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"];
+// Runtime files are loaded from public/ at runtime, so the bundler never
+// processes ONNX Runtime's wasm glue. JSEP wasm is required by WebGPU builds.
+const ortFiles = [
+  "ort.wasm.min.mjs",
+  "ort.webgpu.bundle.min.mjs",
+  "ort-wasm-simd-threaded.mjs",
+  "ort-wasm-simd-threaded.wasm",
+  "ort-wasm-simd-threaded.jsep.mjs",
+  "ort-wasm-simd-threaded.jsep.wasm",
+];
 const modelDir = path.join(root, "public", "models");
 
 const models = [

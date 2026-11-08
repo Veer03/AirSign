@@ -12,7 +12,7 @@
 
 import type { ASLLetter } from "./asl-alphabet";
 import type { Landmark } from "./landmarks";
-import { loadOrt, softmax } from "./ort";
+import { createInferenceSession, loadOrt, softmax } from "./ort";
 
 const MODEL_URL = "/models/asl_alphabet.onnx";
 const LABELS_URL = "/models/asl_alphabet_labels.json";
@@ -93,7 +93,7 @@ export function getPretrainedAlphabetClassifier(): Promise<PretrainedAlphabetCla
     classifierPromise = (async () => {
       const ort = await loadOrt();
       const [session, labels] = await Promise.all([
-        ort.InferenceSession.create(MODEL_URL, { executionProviders: ["wasm"], graphOptimizationLevel: "all" }),
+        createInferenceSession(MODEL_URL, { graphOptimizationLevel: "all" }),
         fetch(LABELS_URL).then((response) => {
           if (!response.ok) throw new Error(`alphabet labels ${response.status}`);
           return response.json() as Promise<string[]>;

@@ -1,7 +1,7 @@
 "use client";
 
 import { FRAME_POINTS, stackFrames } from "./holistic-frame";
-import { loadOrt, softmax } from "./ort";
+import { createInferenceSession, loadOrt, softmax } from "./ort";
 
 /**
  * Kaggle asl-signs (250 isolated signs) classifier, ONNX build of the
@@ -26,10 +26,7 @@ async function createClassifier(): Promise<Classifier> {
   const ort = await loadOrt();
 
   const [session, signToIndex] = await Promise.all([
-    ort.InferenceSession.create(MODEL_URL, {
-      executionProviders: ["wasm"],
-      graphOptimizationLevel: "all",
-    }),
+    createInferenceSession(MODEL_URL, { graphOptimizationLevel: "all" }),
     fetch(LABELS_URL).then((response) => {
       if (!response.ok) throw new Error(`labels ${response.status}`);
       return response.json() as Promise<Record<string, number>>;
