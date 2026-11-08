@@ -26,14 +26,22 @@ export function detectCustomGesture(
   const ring = reach(16, 14);
   const pinky = reach(20, 18);
 
+  // The pictured OK pose joins thumb and index while the other three fingers
+  // stay raised. Map that shape to the spoken interjection in gesture mode.
+  const palmLength = dist2d(wrist, landmarks[9]);
+  const pinch = palmLength > 1e-6 ? dist2d(landmarks[4], landmarks[8]) / palmLength : 1;
+  const wowPose = pinch < 0.65 && middle > 1.1 && ring > 1.1 && pinky > 1.1;
+  if (wowPose) return { gesture: "Wow", confidence: 0.9 };
+
   // A Korean finger heart pinches the index fingertip against the thumb while
   // the other three fingers stay curled. Normalize the pinch to palm length
   // so it works at different camera distances.
-  const palmLength = dist2d(wrist, landmarks[9]);
-  const pinch = palmLength > 1e-6 ? dist2d(landmarks[4], landmarks[8]) / palmLength : 1;
-  const indexExtended = index > 1.05;
-  const otherFingersCurled = middle < 1.05 && ring < 1.05 && pinky < 1.05;
-  if (pinch < 0.55 && indexExtended && otherFingersCurled) {
+  // The index is usually bent while forming the heart, so do not require a
+  // fully extended finger. The pinch and three curled fingers distinguish it
+  // from an open pinch or a closed fist across either hand orientation.
+  const indexOutFromPalm = index > 0.9;
+  const otherFingersCurled = middle < 1.2 && ring < 1.2 && pinky < 1.2;
+  if (pinch < 0.75 && indexOutFromPalm && otherFingersCurled) {
     return { gesture: "Finger_Heart", confidence: 0.9 };
   }
 

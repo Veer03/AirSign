@@ -45,7 +45,31 @@ export class LocalStubRecognizer implements SignRecognizer {
     if (valid.length >= 2) {
       const pair = valid.slice(0, 2);
       const combo = matchCombo(pair.map((hand) => hand.gesture as GestureId));
-      if (!combo) return null;
+      if (!combo) {
+        // A single custom pose still counts when the resting hand receives an
+        // unrelated built-in label. Matching custom pairs take precedence.
+        const customHand = pair.find(
+          (hand) =>
+            hand.gesture === "Wow" ||
+            hand.gesture === "Finger_Heart" ||
+            hand.gesture === "Middle_Finger",
+        );
+        if (customHand) {
+          const phrase = phraseForGesture(customHand.gesture as GestureId);
+          if (!phrase) return null;
+          return {
+            id: phrase.id,
+            label: phrase.label,
+            phrase: phrase.text,
+            gesture: phrase.gesture,
+            hands: 1,
+            side: customHand.side,
+            confidence: customHand.confidence,
+            model: this.model,
+          };
+        }
+        return null;
+      }
 
       return {
         id: combo.id,

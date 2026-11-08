@@ -137,7 +137,7 @@ export default function WorkspacePage() {
 
           <div className="flex items-center gap-3">
             <span className="label hidden md:block">
-              {alphabetMode ? "ASL alphabet spelling" : "starter gestures · not sign language"}
+              {alphabetMode ? "ASL alphabet + Wow sign" : "starter gestures · not sign language"}
             </span>
             <button
               type="button"
@@ -172,7 +172,7 @@ export default function WorkspacePage() {
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-white/50">
                 {alphabetMode
-                  ? "Hold a static ASL letter pose until the ring fills. Each letter is added and spoken if speak-on-lock is on."
+                  ? "Hold a static ASL letter pose or the Wow pose until the ring fills. The result is added and spoken if speak-on-lock is on."
                   : "Hold a starter pose — one hand, or a matching pair — until the ring fills. Speak-on-lock is "}
                 {!alphabetMode ? (
                   <span className={settings.autoSpeak ? "text-accent" : "text-white/80"}>

@@ -120,6 +120,9 @@ function CameraSurface({
     window.history.replaceState(null, "", url);
   }, [mode]);
   const words = mode === "words";
+  // Harshpal's alphabet tab also recognizes the Wow / finger-heart / middle
+  // finger poses; the pretrained tab stays letters-only.
+  const knnAlphabet = mode === "alphabet";
 
   // CPU/GPU toggle: saved in localStorage; switching rebuilds the models by
   // remounting this surface (same path as "Try again").
@@ -300,7 +303,9 @@ function CameraSurface({
               <h2 className="text-lg font-medium">Turn on the camera</h2>
               <p className="mt-2 text-sm text-white/60">
                 {alphabetMode
-                  ? "Show one static ASL alphabet letter, or press its A–Z key."
+                  ? knnAlphabet
+                    ? "Show one static ASL letter or the Wow pose, or press its A–Z key."
+                    : "Show one static ASL letter, or press its A–Z key."
                   : "Show a starter gesture with one hand, or hold a matching pair with both."}{" "}
                 The video stays in this browser — only text is sent to the server.
               </p>
@@ -369,7 +374,11 @@ function CameraSurface({
                   )}
                 />
                 {alphabetMode
-                  ? handCount === 0
+                  ? sign?.phrase === "Wow!"
+                    ? handCount === 2
+                      ? "two Wow hands"
+                      : "Wow sign"
+                    : handCount === 0
                     ? "show one hand"
                     : "ASL alphabet hand"
                   : handCount === 0
@@ -456,7 +465,7 @@ function CameraSurface({
               {alphabetMode
                 ? alphabetModel === "pretrained"
                   ? "ASL fingerspelling · pretrained MLP (CC BY-NC)"
-                  : "ASL fingerspelling · dataset kNN"
+                  : "ASL fingerspelling + Wow pose · dataset kNN"
                 : "starter gestures · not sign language"}
             </p>
           </>
@@ -474,9 +483,11 @@ function CameraSurface({
         <p className="label !text-[9px]">
           {words
             ? `hold ${SIGN_KEY} = sign`
-            : alphabetMode
-              ? "ASL alphabet · static A–Z poses · keys A–Z"
-              : "keys 1–9 = phrases"}
+            : knnAlphabet
+              ? "ASL alphabet · static A–Z poses + Wow · keys A–Z"
+              : alphabetMode
+                ? "ASL alphabet · static A–Z poses · keys A–Z"
+                : "keys 1–9 = phrases"}
         </p>
       </div>
     </PixelPanel>

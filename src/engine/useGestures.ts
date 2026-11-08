@@ -371,12 +371,40 @@ export function useGestures(options: UseGesturesOptions) {
           try {
             const frame = detect(recognizer, video, now);
             const tracked = trackerRef.current.update(frame.hands, now);
-            const useOneHand = alphabetModeRef.current || !twoHandsRef.current;
-            const usable = useOneHand
-              ? [...tracked].sort((a, b) => b.confidence - a.confidence).slice(0, 1)
-              : tracked;
+            // Special poses (Wow / finger heart / middle finger) override letters
+            // in Harshpal's kNN alphabet only; the pretrained tab stays letters-only.
+            const specialPoses = !alphabetModeRef.current || alphabetModelRef.current === "knn";
+            const specialHands = (gesture: string) =>
+              specialPoses
+                ? tracked.filter((hand) => hand.gesture === gesture && hand.confidence >= 0.5)
+                : [];
+            const wowHands = specialHands("Wow");
+            const fingerHeartHands = specialHands("Finger_Heart");
+            const middleFingerHands = specialHands("Middle_Finger");
+            const hasDoubleWow = twoHandsRef.current && wowHands.length >= 2;
+            const hasDoubleFingerHeart = twoHandsRef.current && fingerHeartHands.length >= 2;
+            const hasDoubleMiddleFinger = twoHandsRef.current && middleFingerHands.length >= 2;
+            const alphabetSpecialHands = hasDoubleWow
+              ? wowHands.slice(0, 2)
+              : hasDoubleFingerHeart
+                ? fingerHeartHands.slice(0, 2)
+                : hasDoubleMiddleFinger
+                  ? middleFingerHands.slice(0, 2)
+                  : fingerHeartHands.slice(0, 1);
+            const useOneHand =
+              !twoHandsRef.current ||
+              (alphabetModeRef.current &&
+                !hasDoubleWow &&
+                !hasDoubleFingerHeart &&
+                !hasDoubleMiddleFinger);
+            const usable =
+              alphabetModeRef.current && alphabetSpecialHands.length > 0
+                ? alphabetSpecialHands
+                : useOneHand
+                  ? [...tracked].sort((a, b) => b.confidence - a.confidence).slice(0, 1)
+                  : tracked;
 
-            bufferRef.current.push({
+            const landmarkFrame = {
               t: now,
               hands: usable.map((hand) => ({
                 id: hand.id,
@@ -385,10 +413,13 @@ export function useGestures(options: UseGesturesOptions) {
                 confidence: hand.confidence,
                 landmarks: hand.landmarks,
               })),
-            });
+            };
+            bufferRef.current.push(landmarkFrame);
 
             let sign: SignResult | null;
-            if (alphabetModeRef.current) {
+            if (alphabetModeRef.current && alphabetSpecialHands.length > 0) {
+              sign = signRecognizerRef.current.recognize([landmarkFrame]);
+            } else if (alphabetModeRef.current) {
               const hand = usable[0];
               const letter = alphabetClassifierRef.current?.classify(hand?.landmarks, hand?.side);
               sign = letter

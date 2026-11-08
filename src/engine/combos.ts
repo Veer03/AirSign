@@ -64,6 +64,27 @@ export const STARTER_COMBOS: ComboDef[] = [
     pair: ["Victory", "Victory"],
     gesture: "Victory",
   },
+  {
+    id: "combo-finger-heart",
+    label: "Double finger heart",
+    text: "I love you",
+    pair: ["Finger_Heart", "Finger_Heart"],
+    gesture: "Finger_Heart",
+  },
+  {
+    id: "combo-wow",
+    label: "Double wow sign",
+    text: "Wow!",
+    pair: ["Wow", "Wow"],
+    gesture: "Wow",
+  },
+  {
+    id: "combo-fuck-off",
+    label: "Both middle fingers",
+    text: "Fuck off!",
+    pair: ["Middle_Finger", "Middle_Finger"],
+    gesture: "Middle_Finger",
+  },
 ];
 
 const pairKey = (a: GestureId, b: GestureId) => [a, b].sort().join("|");
